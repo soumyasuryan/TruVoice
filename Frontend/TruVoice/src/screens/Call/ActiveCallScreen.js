@@ -42,7 +42,7 @@ import { useCallStore } from '../../store/callStore';
 import { useVoiceAnalysis } from '../../hooks/useVoiceAnalysis';
 import { agoraService } from '../../services/agora/agoraService';
 import { api } from '../../services/api/client';
-import { getCallRiskColor, getRiskScoreColor, getVoiceAuthenticityColor } from '../../utils/scoreColors';
+import { getRiskScoreColor, getVoiceAuthenticityColor } from '../../utils/scoreColors';
 import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 import { useSettingsStore } from '../../store/settingsStore';
 const ENABLE_AI_ANALYSIS = true;
@@ -107,7 +107,6 @@ function makeDemoAnalysisScores() {
     unifiedRiskScore: Math.round(
       (Math.max(aiFraction, scamFraction) * 0.7 + aiFraction * scamFraction * 0.3) * 100,
     ),
-    riskLevel: 'SAFE',
   };
 }
 
@@ -180,11 +179,6 @@ export default function ActiveCallScreen({ navigation, route }) {
   const displayedScamIntentScore = hasAnalysis ? scamIntentScore : demoScores?.scamIntentScore ?? scamIntentScore;
   const displayedUnifiedRiskScore = hasAnalysis ? unifiedRiskScore : demoScores?.unifiedRiskScore ?? unifiedRiskScore;
   const displayedAuthenticity = getHumanVoiceProbability(displayedAiProbability);
-  const displayedRiskLevel = hasAnalysis
-    ? unifiedRiskScore >= 70 && !String(riskLevelLabel).toLowerCase().includes('severe')
-      ? 'HIGH RISK'
-      : riskLevelLabel || 'UNKNOWN'
-    : demoScores?.riskLevel;
   const isSevereRisk =
     String(realTimeRiskLevel || riskAlert?.riskLevel || riskLevelLabel || '').toUpperCase() ===
     'SEVERE';
@@ -478,14 +472,14 @@ export default function ActiveCallScreen({ navigation, route }) {
   const getBubbleColor = () => {
     if (analysisStopped) return '#71717A';
     if (!hasAnalysis && !demoScores) return colors.textMuted;
-    return getCallRiskColor(displayedRiskLevel, displayedUnifiedRiskScore);
+    return getRiskScoreColor(displayedAiProbability);
   };
 
   const getBubbleIcon = () => {
     if (analysisStopped) return 'pause-circle';
     if (!hasAnalysis && !demoScores) return 'hourglass-outline';
-    if (getCallRiskColor(displayedRiskLevel, displayedUnifiedRiskScore) === colors.danger) return 'warning';
-    if (getCallRiskColor(displayedRiskLevel, displayedUnifiedRiskScore) === colors.warning) return 'alert-circle';
+    if (getRiskScoreColor(displayedAiProbability) === colors.danger) return 'warning';
+    if (getRiskScoreColor(displayedAiProbability) === colors.warning) return 'alert-circle';
     return 'shield-checkmark';
   };
 
@@ -535,17 +529,31 @@ export default function ActiveCallScreen({ navigation, route }) {
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => setShowAnalysisCard(!showAnalysisCard)}
-              style={[styles.bubble, !hasAnalysis && styles.calculatingBubble, { backgroundColor: getBubbleColor() }]}
+              style={[
+                styles.bubble,
+                !hasAnalysis && styles.calculatingBubble,
+                (hasAnalysis || demoScores) && styles.aiProbabilityBubble,
+                { backgroundColor: getBubbleColor() },
+              ]}
             >
               <Ionicons name={getBubbleIcon()} size={20} color="#FFFFFF" />
               {!analysisStopped && (
-                <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
+                <View style={styles.bubbleScoreContainer}>
                   {hasAnalysis || demoScores
-                    ? displayedRiskLevel
-                    : isAnalyzing
-                      ? 'Analyzing...'
-                      : 'Listening...'}
-                </Text>
+                    ? (
+                      <>
+                        <Text style={styles.bubbleScoreLabel}>AI Probability</Text>
+                        <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
+                          {displayedAiProbability}%
+                        </Text>
+                      </>
+                    )
+                    : (
+                      <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
+                        {isAnalyzing ? 'Analyzing...' : 'Listening...'}
+                      </Text>
+                    )}
+                </View>
               )}
               {isAnalyzing && !analysisStopped && (
                 <View style={styles.bubbleSpinner} />
@@ -937,6 +945,22 @@ const styles = StyleSheet.create({
   calculatingBubble: {
     width: 112,
     paddingHorizontal: 10,
+  },
+  aiProbabilityBubble: {
+    width: 128,
+    height: 64,
+    borderRadius: 32,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+  },
+  bubbleScoreContainer: {
+    alignItems: 'center',
+  },
+  bubbleScoreLabel: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '700',
   },
   bubbleScore: {
     color: '#FFFFFF',
