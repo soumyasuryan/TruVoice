@@ -542,7 +542,7 @@ export default function ActiveCallScreen({ navigation, route }) {
                   {hasAnalysis || demoScores
                     ? (
                       <>
-                        <Text style={styles.bubbleScoreLabel}>AI Probability</Text>
+                        <Text style={styles.bubbleScoreLabel}>Overall Risk</Text>
                         <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
                           {displayedAiProbability}%
                         </Text>
