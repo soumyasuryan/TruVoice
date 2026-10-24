@@ -1,5 +1,6 @@
 import { agoraService } from '../agora/agoraService';
 import { api } from '../api/client';
+import config from '../../constants/config';
 
 
 function uint8ToBase64(uint8) {
@@ -68,12 +69,12 @@ class AudioProcessorService {
     this.intervalTimer = null;
     this.pcmChunks = [];
     this.frameObserver = null;
-    this.intervalMs = 20000;
+    this.intervalMs = config.audioChunkIntervalMs;
     this.sampleRate = 16000;
     this.numChannels = 1;
   }
 
-  async start(callId, callerNumber, onAnalysisCallback, intervalMs = 20000) {
+  async start(callId, callerNumber, onAnalysisCallback, intervalMs = config.audioChunkIntervalMs) {
     if (this.isProcessing) {
       this.stop();
     }
@@ -101,7 +102,7 @@ class AudioProcessorService {
     agoraService.configurePlaybackAudioFrames(this.sampleRate, this.numChannels);
     agoraService.registerAudioFrameObserver(this.frameObserver);
 
-    // Schedule 20-second chunk processing timer
+    // Schedule audio chunk processing at the configured interval.
     this.intervalTimer = setInterval(async () => {
       if (!this.isProcessing || this.isMuted || this.isStopped) return;
       await this._flushAndAnalyzeBuffer();
@@ -157,7 +158,7 @@ class AudioProcessorService {
       pcmData.set(chunk, offset);
       offset += chunk.length;
     }
-    this.pcmChunks = []; // reset for next 20s window
+    this.pcmChunks = []; // reset for the next analysis window
 
     // Prepend 44-byte WAV header
     const wavHeader = createWavHeader(pcmData.length, this.sampleRate, this.numChannels, 16);

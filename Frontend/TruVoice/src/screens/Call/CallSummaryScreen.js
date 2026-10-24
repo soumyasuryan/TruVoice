@@ -16,7 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { ROUTES } from '../../constants/routes';
-import { normalizeAnalysis } from '../../utils/analysisMapper';
+import { getHumanVoiceProbability, normalizeAnalysis } from '../../utils/analysisMapper';
 import { colors } from '../../theme';
 import { getRiskScoreBackground, getRiskScoreColor } from '../../utils/scoreColors';
 import { showAlert } from '../../store/alertStore';
@@ -63,12 +63,13 @@ export default function CallSummaryScreen({ navigation, route }) {
   );
 
   const aiProbability = averagedAnalysis?.aiProbability ?? pickEither(analysis, 'aiProbability', 'ai_voice_probability', 0);
-  const aiProbabilityCategory = useMemo(() => {
-    if (aiProbability < 50) return { label: 'Low', color: '#22C55E' };
-    if (aiProbability < 70) return { label: 'Medium', color: '#F59E0B' };
-    if (aiProbability < 85) return { label: 'High', color: '#F97316' };
-    return { label: 'Critical', color: '#EF4444' };
-  }, [aiProbability]);
+  const humanVoiceProbability = getHumanVoiceProbability(aiProbability);
+  const voiceAuthenticityCategory = useMemo(() => {
+    if (humanVoiceProbability < 50) return { label: 'Low', color: '#EF4444' };
+    if (humanVoiceProbability < 70) return { label: 'Medium', color: '#F97316' };
+    if (humanVoiceProbability < 85) return { label: 'High', color: '#F59E0B' };
+    return { label: 'Very high', color: '#22C55E' };
+  }, [humanVoiceProbability]);
   const authenticityScore = pickEither(
     analysis,
     'authenticityScore',
@@ -307,15 +308,15 @@ export default function CallSummaryScreen({ navigation, route }) {
               </View>
 
               <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>AI PROB.</Text>
+                <Text style={styles.metricLabel}>VOICE AUTH.</Text>
                 <Text
                   numberOfLines={1}
                   adjustsFontSizeToFit
-                  style={[styles.metricValue, styles.aiProbabilityValue, { color: aiProbabilityCategory.color }]}
+                  style={[styles.metricValue, styles.aiProbabilityValue, { color: voiceAuthenticityCategory.color }]}
                 >
-                  {aiProbabilityCategory.label}
+                  {voiceAuthenticityCategory.label}
                 </Text>
-                <Text style={styles.metricSubvalue}>{`${aiProbability}%`}</Text>
+                <Text style={styles.metricSubvalue}>{`${humanVoiceProbability}%`}</Text>
               </View>
 
               <View style={styles.metricCard}>
@@ -335,7 +336,7 @@ export default function CallSummaryScreen({ navigation, route }) {
               </View>
 
               <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>AI PROB.</Text>
+                <Text style={styles.metricLabel}>VOICE AUTH.</Text>
                 <Text style={[styles.metricValue, { color: colors.textMuted }]}>
                   {isSavedContact ? 'N/A' : '--'}
                 </Text>

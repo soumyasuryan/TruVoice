@@ -20,6 +20,7 @@ import { safeGoBack } from '../../utils/navigationHelper';
 import { analysisService } from '../../services/analysis/analysisService';
 import { showAlert } from '../../store/alertStore';
 import { getRiskScoreBackground, getRiskScoreColor } from '../../utils/scoreColors';
+import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 
 export default function CallDetailsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
@@ -37,6 +38,7 @@ export default function CallDetailsScreen({ navigation, route }) {
   const aiExplanation = call.aiExplanation || call.reasoning || '';
   const authenticityScore = call.authenticityScore ?? (call.ai_voice_probability != null ? Math.max(0, 100 - Math.round(call.ai_voice_probability)) : '--');
   const aiProbability = call.aiProbability ?? Math.round(call.ai_voice_probability ?? 0);
+  const humanVoiceProbability = getHumanVoiceProbability(aiProbability);
   const unifiedRiskScore = call.unifiedRiskScore ?? Math.round(call.unified_risk_score ?? 0);
   const riskLevelLabel = hasAnalysis ? (call.riskLevelLabel || call.risk_level || 'LOW RISK') : 'ANALYSIS UNAVAILABLE';
   const scamCategory = call.scamCategory || call.scam_category || '';
@@ -227,9 +229,9 @@ export default function CallDetailsScreen({ navigation, route }) {
 
               <View style={styles.metricsRow}>
                 <View style={styles.metricCard}>
-                  <Text style={styles.metricLabel}>AI PROBABILITY</Text>
+                  <Text style={styles.metricLabel}>VOICE AUTHENTICITY</Text>
                   <Text style={[styles.metricValue, { color: getRiskScoreColor(aiProbability) }]}>
-                    {aiProbability}%
+                    {humanVoiceProbability}%
                   </Text>
                 </View>
                 <View style={styles.metricCard}>

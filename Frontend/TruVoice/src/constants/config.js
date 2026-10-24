@@ -35,7 +35,7 @@ export const config = {
   apiTimeout: 60000,
   splashDuration: 2500,
   onboardingSlides: 3,
-  audioChunkIntervalMs: 20000,
+  audioChunkIntervalMs: 7000,
   otpResendCooldownSec: 60,
   maxTranscriptLines: 100,
   historyLimit: 30,

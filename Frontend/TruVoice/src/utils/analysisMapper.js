@@ -45,6 +45,12 @@ const isGenericCallerName = (value) => {
   );
 };
 
+export const getHumanVoiceProbability = (aiProbability) => {
+  const score = Number(aiProbability);
+  if (!Number.isFinite(score)) return 100;
+  return Math.max(0, Math.min(100, Math.round(100 - score)));
+};
+
 export const normalizeAnalysis = (data = {}) => {
   const aiProbability = Math.round(
     pickEither(data, 'aiProbability', 'ai_voice_probability', 0),
@@ -107,6 +113,7 @@ export const normalizeAnalysis = (data = {}) => {
     transcript: transcriptText,
     transcriptLines,
     aiProbability,
+    humanVoiceProbability: getHumanVoiceProbability(aiProbability),
     scamIntentScore: scamIntent,
     unifiedRiskScore: unifiedRisk,
     authenticityScore,

@@ -30,6 +30,7 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import { ROUTES } from '../../constants/routes';
+import config from '../../constants/config';
 import { colors } from '../../theme';
 import { audioProcessorService } from '../../services/audio/audioProcessorService';
 import { analysisService } from '../../services/analysis/analysisService';
@@ -42,6 +43,7 @@ import { useVoiceAnalysis } from '../../hooks/useVoiceAnalysis';
 import { agoraService } from '../../services/agora/agoraService';
 import { api } from '../../services/api/client';
 import { getRiskScoreColor } from '../../utils/scoreColors';
+import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 import { useSettingsStore } from '../../store/settingsStore';
 const ENABLE_AI_ANALYSIS = true;
 
@@ -133,12 +135,20 @@ export default function ActiveCallScreen({ navigation, route }) {
   const webEvidence = useCallStore((s) => s.webEvidence);
   const pendingWebEvidence = useCallStore((s) => s.pendingWebEvidence);
 
+  // Auto-open the analysis card when web evidence arrives so the user
+  // doesn't miss the "Verifying..." spinner or the final verdict
+  useEffect(() => {
+    if (pendingWebEvidence || webEvidence) {
+      setShowAnalysisCard(true);
+    }
+  }, [pendingWebEvidence, webEvidence]);
+
   const storeContacts = useContactsStore((s) => s.contacts);
   const aiStore = useAiDetectionStore();
   const updateAiStore = useAiDetectionStore((s) => s.updateFromBackend);
   const prependHistoryItem = useHistoryStore((s) => s.prependItem);
 
-  const { authenticityScore, aiProbability, confidence, riskLevelLabel, scamCategory, scamIntentScore, unifiedRiskScore, threatType, uiAlert } = aiStore;
+  const { aiProbability, confidence, riskLevelLabel, scamCategory, scamIntentScore, unifiedRiskScore, threatType, uiAlert } = aiStore;
   const hasAnalysis = chunkCount > 0;
   const isSevereRisk =
     String(realTimeRiskLevel || riskAlert?.riskLevel || riskLevelLabel || '').toUpperCase() ===
@@ -320,7 +330,7 @@ export default function ActiveCallScreen({ navigation, route }) {
 
           prependHistoryItem(result);
         },
-        20000,
+        config.audioChunkIntervalMs,
       );
       console.log('[ActiveCallScreen] audioProcessorService started (2s delayed to protect Agora audio path)');
     }, 2000);
@@ -461,11 +471,15 @@ export default function ActiveCallScreen({ navigation, route }) {
               <Ionicons name={getBubbleIcon()} size={20} color="#FFFFFF" />
               {!analysisStopped && (
                 <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
-                  {hasAnalysis ? `${authenticityScore}%` : 'Detecting...'}
+                  {hasAnalysis ? `${getHumanVoiceProbability(aiProbability)}%` : 'Detecting...'}
                 </Text>
               )}
               {isAnalyzing && !analysisStopped && (
                 <View style={styles.bubbleSpinner} />
+              )}
+              {/* Web evidence notification dot — visible even when card is closed */}
+              {(pendingWebEvidence || webEvidence) && !showAnalysisCard && (
+                <View style={styles.webDot} />
               )}
             </TouchableOpacity>
 
@@ -502,10 +516,10 @@ export default function ActiveCallScreen({ navigation, route }) {
                     </View>
                     <View style={styles.analysisRow}>
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
-                        AI voice
+                        Voice authenticity
                       </Text>
                       <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(aiProbability) }]}>
-                        {hasAnalysis ? `${aiProbability}%` : 'Detecting...'}
+                        {hasAnalysis ? `${getHumanVoiceProbability(aiProbability)}%` : 'Detecting...'}
                       </Text>
                     </View>
                     <View style={styles.analysisRow}>

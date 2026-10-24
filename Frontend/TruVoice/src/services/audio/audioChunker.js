@@ -1,5 +1,6 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
+import config from '../../constants/config';
 
 export async function deleteAudioFile(uri) {
   if (!uri) return;
@@ -19,7 +20,7 @@ class AudioChunkerService {
     this.isAnalysisStopped = false;
     this.chunkIndex = 0;
     this.onChunkCallback = null;
-    this.intervalMs = 20000;
+    this.intervalMs = config.audioChunkIntervalMs;
   }
 
   async requestPermissions() {
@@ -69,7 +70,7 @@ class AudioChunkerService {
     }
   }
 
-  async startChunking(onChunkCallback, intervalMs = 20000) {
+  async startChunking(onChunkCallback, intervalMs = config.audioChunkIntervalMs) {
     console.warn('Legacy audioChunker startChunking called. Hardware mic recording disabled in favor of Agora audioProcessorService.');
     this.isChunking = false;
     return false;
