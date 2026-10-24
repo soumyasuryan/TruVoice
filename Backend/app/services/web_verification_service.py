@@ -89,7 +89,8 @@ CLAIM_PATTERNS: list[dict[str, Any]] = [
     {
         "id": "bank_impersonation",
         "pattern": re.compile(
-            r"\b(?:calling\s+from|i\s+am\s+from|from\s+the|from\s+your)\s+(?:your\s+)?(?:bank|sbi|hdfc|icici|rbi|customer\s*care)\b",
+            r"\b(?:calling\s+from|i\s+am\s+(?:calling\s+)?from|from\s+the|from\s+your|this\s+is|this\s+call\s+is\s+from)\s+(?:your\s+)?(?:bank|sbi|hdfc|icici|rbi|axis|kotak|customer\s*care|fraud\s*department|banking\s*department)\b"
+            r"|\b(?:sbi|hdfc|icici|rbi|axis|kotak)\s+(?:bank|customer\s*care|fraud)\b",
             re.IGNORECASE,
         ),
         "claim": "I am from your bank calling to verify your account",
@@ -98,11 +99,21 @@ CLAIM_PATTERNS: list[dict[str, Any]] = [
     {
         "id": "digital_arrest",
         "pattern": re.compile(
-            r"\b(?:digital\s*arrest|arrest\s*warrant|cbi|customs\s*parcel|narcotics|police\s*case|trai\s*disconnection)\b",
+            r"\b(?:digital\s*arrest|arrest\s*warrant|cbi|customs\s*parcel|narcotics|police\s*case|trai\s*disconnection|ed\s*notice|enforcement\s*directorate)\b",
             re.IGNORECASE,
         ),
         "claim": "Digital arrest or legal warrant issued over phone call",
         "question": "Does Indian law or police enforce digital arrest or arrest warrants via video or phone calls?",
+    },
+    {
+        "id": "suspicious_scam",
+        "pattern": re.compile(
+            r"\b(?:fraud(?:ulent)?\s+(?:transaction|activity|call)|suspicious\s+transaction|your\s+(?:account|card)\s+(?:has\s+been\s+)?(?:blocked|frozen|suspended|compromised|deactivated)|immediately\s+(?:transfer|pay|send)|limited\s+time|act\s+now|urgent(?:ly)?\s+(?:call|contact|verify|update))\b"
+            r"|\b(?:deactivate\s+your|you\s+will\s+be\s+arrested|legal\s+action|file\s+a\s+case|police\s+will|courier\s+contains|parcel\s+seized)\b",
+            re.IGNORECASE,
+        ),
+        "claim": "Urgent fraud alert or legal threat used to pressure the call recipient",
+        "question": "Do legitimate banks or law enforcement agencies use urgent threats and pressure tactics in unsolicited phone calls?",
     },
 ]
 
@@ -544,8 +555,6 @@ class CallVerificationSession:
         if not settings.TINYFISH_ENABLED:
             return False
         if self.claims_checked_count >= settings.CLAIM_MAX_PER_CALL:
-            return False
-        if str(base_level).upper() == "SEVERE" and not settings.VERIFY_WHEN_SEVERE:
             return False
         now = time.time()
         if self.last_check_time > 0 and (now - self.last_check_time) < settings.CLAIM_MIN_GAP_S:

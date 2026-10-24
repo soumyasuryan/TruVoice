@@ -215,7 +215,21 @@ class VoiceStreamSession:
                     break
 
             if not new_claim:
-                return
+                # Fallback: the LLM already flagged this as scam/severe but no specific
+                # keyword pattern matched. Inject a generic claim so TinyFish still runs —
+                # this is the exact gap the web-verification layer is meant to close.
+                if str(base_level).upper() in ("MODERATE", "SEVERE"):
+                    fallback_id = "llm_scam_detected"
+                    if fallback_id not in self.verification_session.checked_claim_ids:
+                        new_claim = {
+                            "claim_id": fallback_id,
+                            "claim_text": "Caller is using pressure tactics or impersonating an authority",
+                            "question": "Do legitimate banks, government agencies, or police use pressure tactics in unsolicited phone calls to demand immediate action?",
+                        }
+                    else:
+                        return
+                else:
+                    return
 
             claim_id = new_claim["claim_id"]
             claim_text = new_claim["claim_text"]
