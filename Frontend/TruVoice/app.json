@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "TruVoice",
+    "slug": "TruVoice",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#09090B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "TruVoice needs microphone access for voice calls and real-time scam detection.",
+        "UIBackgroundModes": ["audio", "voip"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#09090B"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH_CONNECT"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "apiUrl": "${EXPO_PUBLIC_API_URL}",
+      "eas": {
+        "projectId": "ad84f836-5feb-48ea-a61a-8ffeff4ab5bc"
+      }
+    }
+  }
+}
