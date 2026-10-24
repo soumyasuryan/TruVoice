@@ -2,6 +2,27 @@ import { agoraService } from '../agora/agoraService';
 import { api } from '../api/client';
 import config from '../../constants/config';
 
+const SPEECH_ACTIVITY_RMS_THRESHOLD = 0.003;
+
+export const hasVoiceActivity = (frameBytes, channels = 1) => {
+  const sampleCount = Math.floor(frameBytes.byteLength / 2);
+  if (!sampleCount) return false;
+
+  const view = new DataView(
+    frameBytes.buffer,
+    frameBytes.byteOffset,
+    frameBytes.byteLength,
+  );
+  let sumSquares = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = view.getInt16(index * 2, true);
+    sumSquares += sample * sample;
+  }
+
+  const rms = Math.sqrt(sumSquares / sampleCount) / 32768;
+  return rms >= SPEECH_ACTIVITY_RMS_THRESHOLD && channels > 0;
+};
+
 
 function uint8ToBase64(uint8) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -70,11 +91,22 @@ class AudioProcessorService {
     this.pcmChunks = [];
     this.frameObserver = null;
     this.intervalMs = config.audioChunkIntervalMs;
+    this.audioWindowDurationMs = 0;
+    this.hasDetectedCallerAudio = false;
+    this.pendingAnalysisCount = 0;
+    this.analysisGeneration = 0;
+    this.onStatusChange = null;
     this.sampleRate = 16000;
     this.numChannels = 1;
   }
 
-  async start(callId, callerNumber, onAnalysisCallback, intervalMs = config.audioChunkIntervalMs) {
+  async start(
+    callId,
+    callerNumber,
+    onAnalysisCallback,
+    intervalMs = config.audioChunkIntervalMs,
+    onStatusChange = null,
+  ) {
     if (this.isProcessing) {
       this.stop();
     }
@@ -87,6 +119,12 @@ class AudioProcessorService {
     this.isMuted = false;
     this.isStopped = false;
     this.pcmChunks = [];
+    this.audioWindowDurationMs = 0;
+    this.hasDetectedCallerAudio = false;
+    this.pendingAnalysisCount = 0;
+    this.analysisGeneration += 1;
+    this.onStatusChange = onStatusChange;
+    this.onStatusChange?.('listening');
 
     console.log(`Starting AudioProcessorService for call ${callId}, caller ${callerNumber}`);
 
@@ -101,12 +139,6 @@ class AudioProcessorService {
 
     agoraService.configurePlaybackAudioFrames(this.sampleRate, this.numChannels);
     agoraService.registerAudioFrameObserver(this.frameObserver);
-
-    // Schedule audio chunk processing at the configured interval.
-    this.intervalTimer = setInterval(async () => {
-      if (!this.isProcessing || this.isMuted || this.isStopped) return;
-      await this._flushAndAnalyzeBuffer();
-    }, this.intervalMs);
 
     return true;
   }
@@ -135,7 +167,20 @@ class AudioProcessorService {
     }
 
     if (frameBytes && frameBytes.length > 0) {
+      if (!this.hasDetectedCallerAudio && !hasVoiceActivity(frameBytes, this.numChannels)) {
+        return;
+      }
+
+      this.hasDetectedCallerAudio = true;
       this.pcmChunks.push(frameBytes);
+      this.audioWindowDurationMs +=
+        (frameBytes.length / (2 * this.numChannels * this.sampleRate)) * 1000;
+
+      if (this.audioWindowDurationMs >= this.intervalMs) {
+        this._flushAndAnalyzeBuffer().catch((error) => {
+          console.error('AudioProcessorService failed to process an audio window:', error);
+        });
+      }
     }
   }
 
@@ -147,8 +192,7 @@ class AudioProcessorService {
     // Do not submit fabricated silence. It creates empty transcripts and can
     // make the UI look like the GPU speech-to-text service has failed.
     if (totalLength === 0) {
-      console.warn('Skipping analysis: Agora provided no remote playback audio frames.');
-      return;
+      return false;
     }
 
     // Combine PCM chunks into single Uint8Array
@@ -159,6 +203,7 @@ class AudioProcessorService {
       offset += chunk.length;
     }
     this.pcmChunks = []; // reset for the next analysis window
+    this.audioWindowDurationMs = 0;
 
     // Prepend 44-byte WAV header
     const wavHeader = createWavHeader(pcmData.length, this.sampleRate, this.numChannels, 16);
@@ -169,33 +214,57 @@ class AudioProcessorService {
     // Convert complete WAV buffer to Base64
     const base64Wav = uint8ToBase64(wavFileBytes);
 
+    const generation = this.analysisGeneration;
+    this.pendingAnalysisCount += 1;
+    this.onStatusChange?.('analyzing');
     try {
       console.log(`Sending ${base64Wav.length} Base64 WAV chars to /api/v1/analysis/audio`);
       const response = await api.analyzeAudioBase64(base64Wav, this.callerNumber, this.callId);
-      if (response.data && typeof this.onAnalysisCallback === 'function') {
+      if (
+        generation === this.analysisGeneration &&
+        response.data &&
+        typeof this.onAnalysisCallback === 'function'
+      ) {
         this.onAnalysisCallback(response.data);
       }
+      return Boolean(response.data);
     } catch (err) {
       console.warn('AudioProcessorService analysis submission error:', err);
+      return false;
+    } finally {
+      if (generation === this.analysisGeneration) {
+        this.pendingAnalysisCount -= 1;
+        this.onStatusChange?.(
+          this.isMuted || this.isStopped
+            ? 'paused'
+            : this.pendingAnalysisCount > 0
+              ? 'analyzing'
+              : 'listening',
+        );
+      }
     }
   }
 
   setMuted(muted) {
     this.isMuted = !!muted;
-    if (this.isMuted) {
-      this.pcmChunks = [];
-    }
+    this._resetAudioWindow();
   }
 
   setStopped(stopped) {
     this.isStopped = !!stopped;
-    if (this.isStopped) {
-      this.pcmChunks = [];
-    }
+    this._resetAudioWindow();
+  }
+
+  _resetAudioWindow() {
+    this.pcmChunks = [];
+    this.audioWindowDurationMs = 0;
+    this.hasDetectedCallerAudio = false;
+    this.onStatusChange?.(this.isMuted || this.isStopped ? 'paused' : 'listening');
   }
 
   stop() {
     this.isProcessing = false;
+    this.analysisGeneration += 1;
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
@@ -205,6 +274,10 @@ class AudioProcessorService {
       this.frameObserver = null;
     }
     this.pcmChunks = [];
+    this.audioWindowDurationMs = 0;
+    this.hasDetectedCallerAudio = false;
+    this.pendingAnalysisCount = 0;
+    this.onStatusChange = null;
     console.log('AudioProcessorService stopped.');
   }
 }

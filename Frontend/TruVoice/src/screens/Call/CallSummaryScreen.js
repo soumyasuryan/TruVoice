@@ -18,7 +18,12 @@ import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop } from 'react-nati
 import { ROUTES } from '../../constants/routes';
 import { getHumanVoiceProbability, normalizeAnalysis } from '../../utils/analysisMapper';
 import { colors } from '../../theme';
-import { getRiskScoreBackground, getRiskScoreColor } from '../../utils/scoreColors';
+import {
+  getRiskScoreBackground,
+  getRiskScoreColor,
+  getVoiceAuthenticityColor,
+  getVoiceClassificationColor,
+} from '../../utils/scoreColors';
 import { showAlert } from '../../store/alertStore';
 
 const pickEither = (obj, camelKey, snakeKey, fallback = undefined) => {
@@ -65,10 +70,9 @@ export default function CallSummaryScreen({ navigation, route }) {
   const aiProbability = averagedAnalysis?.aiProbability ?? pickEither(analysis, 'aiProbability', 'ai_voice_probability', 0);
   const humanVoiceProbability = getHumanVoiceProbability(aiProbability);
   const voiceAuthenticityCategory = useMemo(() => {
-    if (humanVoiceProbability < 50) return { label: 'Low', color: '#EF4444' };
-    if (humanVoiceProbability < 70) return { label: 'Medium', color: '#F97316' };
-    if (humanVoiceProbability < 85) return { label: 'High', color: '#F59E0B' };
-    return { label: 'Very high', color: '#22C55E' };
+    if (humanVoiceProbability < 50) return { label: 'Poor', color: getVoiceAuthenticityColor(humanVoiceProbability) };
+    if (humanVoiceProbability < 80) return { label: 'Medium', color: getVoiceAuthenticityColor(humanVoiceProbability) };
+    return { label: 'Good', color: getVoiceAuthenticityColor(humanVoiceProbability) };
   }, [humanVoiceProbability]);
   const authenticityScore = pickEither(
     analysis,
@@ -133,11 +137,11 @@ export default function CallSummaryScreen({ navigation, route }) {
   const badgeLabel = () => {
     if (isSavedContact) return { label: 'Saved contact', color: '#22C55E' };
     if (!hasAnalysis) return { label: 'No analysis', color: colors.textMuted };
-    if (aiProbability > 60) return { label: 'Synthetic voice', color: getRiskScoreColor(aiProbability) };
+    if (aiProbability > 60) return { label: 'Synthetic voice', color: getVoiceClassificationColor('synthetic voice') };
     if (aiProbability > 30 || unifiedRiskScore > 50) {
-      return { label: 'Suspicious', color: getRiskScoreColor(Math.max(aiProbability, unifiedRiskScore)) };
+      return { label: 'Suspicious', color: getVoiceClassificationColor('suspicious') };
     }
-    return { label: 'Verified human', color: getRiskScoreColor(Math.max(aiProbability, unifiedRiskScore)) };
+    return { label: 'Verified human', color: getVoiceClassificationColor('verified human') };
   };
 
   const badge = badgeLabel();

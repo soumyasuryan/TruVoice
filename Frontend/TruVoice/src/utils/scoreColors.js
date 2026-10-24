@@ -7,6 +7,28 @@ export const getRiskScoreColor = (score) => {
   return colors.success;
 };
 
+export const getVoiceAuthenticityColor = (score) => {
+  const normalizedScore = Number(score) || 0;
+  if (normalizedScore < 50) return colors.danger;
+  if (normalizedScore < 80) return colors.warning;
+  return colors.success;
+};
+
+export const getVoiceClassificationColor = (classification) => {
+  switch (String(classification).toLowerCase()) {
+    case 'ai':
+    case 'synthetic voice':
+      return colors.danger;
+    case 'suspicious':
+      return colors.warning;
+    case 'human':
+    case 'verified human':
+      return colors.success;
+    default:
+      return null;
+  }
+};
+
 export const getRiskScoreBackground = (score, alpha = 0.08) => {
   const opacity = Math.round(alpha * 255).toString(16).padStart(2, '0');
   return `${getRiskScoreColor(score)}${opacity}`;

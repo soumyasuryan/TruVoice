@@ -19,7 +19,11 @@ import { colors } from '../../theme';
 import { safeGoBack } from '../../utils/navigationHelper';
 import { analysisService } from '../../services/analysis/analysisService';
 import { showAlert } from '../../store/alertStore';
-import { getRiskScoreBackground, getRiskScoreColor } from '../../utils/scoreColors';
+import {
+  getRiskScoreBackground,
+  getRiskScoreColor,
+  getVoiceAuthenticityColor,
+} from '../../utils/scoreColors';
 import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 
 export default function CallDetailsScreen({ navigation, route }) {
@@ -230,7 +234,7 @@ export default function CallDetailsScreen({ navigation, route }) {
               <View style={styles.metricsRow}>
                 <View style={styles.metricCard}>
                   <Text style={styles.metricLabel}>VOICE AUTHENTICITY</Text>
-                  <Text style={[styles.metricValue, { color: getRiskScoreColor(aiProbability) }]}>
+                  <Text style={[styles.metricValue, { color: getVoiceAuthenticityColor(humanVoiceProbability) }]}>
                     {humanVoiceProbability}%
                   </Text>
                 </View>

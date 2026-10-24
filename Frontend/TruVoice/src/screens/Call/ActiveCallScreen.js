@@ -42,7 +42,7 @@ import { useCallStore } from '../../store/callStore';
 import { useVoiceAnalysis } from '../../hooks/useVoiceAnalysis';
 import { agoraService } from '../../services/agora/agoraService';
 import { api } from '../../services/api/client';
-import { getRiskScoreColor } from '../../utils/scoreColors';
+import { getRiskScoreColor, getVoiceAuthenticityColor } from '../../utils/scoreColors';
 import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 import { useSettingsStore } from '../../store/settingsStore';
 const ENABLE_AI_ANALYSIS = true;
@@ -331,6 +331,7 @@ export default function ActiveCallScreen({ navigation, route }) {
           prependHistoryItem(result);
         },
         config.audioChunkIntervalMs,
+        (status) => setIsAnalyzing(status === 'analyzing'),
       );
       console.log('[ActiveCallScreen] audioProcessorService started (2s delayed to protect Agora audio path)');
     }, 2000);
@@ -410,13 +411,16 @@ export default function ActiveCallScreen({ navigation, route }) {
 
   const getBubbleColor = () => {
     if (analysisStopped) return '#71717A';
-    return getRiskScoreColor(unifiedRiskScore);
+    if (!hasAnalysis) return colors.textMuted;
+    return getVoiceAuthenticityColor(getHumanVoiceProbability(aiProbability));
   };
 
   const getBubbleIcon = () => {
     if (analysisStopped) return 'pause-circle';
-    if (unifiedRiskScore >= 80) return 'warning';
-    if (unifiedRiskScore >= 50) return 'alert-circle';
+    if (!hasAnalysis) return 'hourglass-outline';
+    const voiceAuthenticity = getHumanVoiceProbability(aiProbability);
+    if (voiceAuthenticity < 50) return 'warning';
+    if (voiceAuthenticity < 80) return 'alert-circle';
     return 'shield-checkmark';
   };
 
@@ -471,7 +475,11 @@ export default function ActiveCallScreen({ navigation, route }) {
               <Ionicons name={getBubbleIcon()} size={20} color="#FFFFFF" />
               {!analysisStopped && (
                 <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
-                  {hasAnalysis ? `${getHumanVoiceProbability(aiProbability)}%` : 'Detecting...'}
+                  {hasAnalysis
+                    ? `${getHumanVoiceProbability(aiProbability)}%`
+                    : isAnalyzing
+                      ? 'Analyzing...'
+                      : 'Listening...'}
                 </Text>
               )}
               {isAnalyzing && !analysisStopped && (
@@ -511,15 +519,19 @@ export default function ActiveCallScreen({ navigation, route }) {
                         Scam Intent
                       </Text>
                       <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(scamIntentScore) }]}>
-                        {hasAnalysis ? `${scamIntentScore}%` : 'Detecting...'}
+                        {hasAnalysis ? `${scamIntentScore}%` : isAnalyzing ? 'Analyzing...' : 'Listening...'}
                       </Text>
                     </View>
                     <View style={styles.analysisRow}>
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
                         Voice authenticity
                       </Text>
-                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(aiProbability) }]}>
-                        {hasAnalysis ? `${getHumanVoiceProbability(aiProbability)}%` : 'Detecting...'}
+                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getVoiceAuthenticityColor(getHumanVoiceProbability(aiProbability)) }]}>
+                        {hasAnalysis
+                          ? `${getHumanVoiceProbability(aiProbability)}%`
+                          : isAnalyzing
+                            ? 'Analyzing...'
+                            : 'Listening...'}
                       </Text>
                     </View>
                     <View style={styles.analysisRow}>
@@ -527,7 +539,7 @@ export default function ActiveCallScreen({ navigation, route }) {
                         Overall risk
                       </Text>
                       <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(unifiedRiskScore) }]}>
-                        {hasAnalysis ? `${unifiedRiskScore}%` : 'Detecting...'}
+                        {hasAnalysis ? `${unifiedRiskScore}%` : isAnalyzing ? 'Analyzing...' : 'Listening...'}
                       </Text>
                     </View>
                     {hasAnalysis && riskLevelLabel ? (
