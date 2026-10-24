@@ -208,10 +208,10 @@ class TestGuardianSettingsAndContacts(unittest.TestCase):
     def test_email_validation_and_limit(self):
         with self.assertRaises(ValidationError):
             GuardianContactCreate(email="invalid-email")
-        self.assertEqual(guardian_alerts.add_guardian_contact(GuardianContactCreate(email="one@example.com"), "user-1")["status"], "pending")
+        self.assertEqual(guardian_alerts.add_guardian_contact(GuardianContactCreate(email="one@example.com"), "user-1")["status"], "verified")
 
         self.db.tables["guardian_contacts"] = [
-            {"id": f"contact-{index}", "user_id": "user-1", "email": f"{index}@example.com", "status": "pending", "is_active": True}
+            {"id": f"contact-{index}", "user_id": "user-1", "email": f"{index}@example.com", "status": "verified", "is_active": True}
             for index in range(service.MAX_CONTACTS)
         ]
         with self.assertRaises(HTTPException) as error:
@@ -219,11 +219,12 @@ class TestGuardianSettingsAndContacts(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 409)
 
     def test_contact_verification_removal_and_opt_out(self):
-        guardian_alerts.add_guardian_contact(GuardianContactCreate(email="guardian@example.com"), "user-1")
+        result = guardian_alerts.add_guardian_contact(GuardianContactCreate(email="guardian@example.com"), "user-1")
+        self.assertEqual(result["status"], "verified")
         text_body = self.mock_send_email.call_args.args[2]
-        token = re.search(r"token=([A-Za-z0-9_-]+)", text_body).group(1)
-        verification = guardian_alerts.verify_guardian_contact(token)
-        self.assertIn("Email verified", verification.body.decode())
+        self.assertIn("added as a trusted guardian contact", text_body.lower())
+        self.assertIn("no email verification is required", text_body.lower())
+        self.assertIn("unsubscribe", text_body.lower())
         contact = self.db.tables["guardian_contacts"][0]
         self.assertEqual(contact["status"], "verified")
         self.assertIsNone(contact["verification_token_hash"])
@@ -239,6 +240,24 @@ class TestGuardianSettingsAndContacts(unittest.TestCase):
         self.assertIn("Unsubscribed", response.body.decode())
         self.assertFalse(contact["is_active"])
         self.assertEqual(contact["status"], "opted_out")
+
+    def test_legacy_verify_guardian_contact(self):
+        token = "test-verification-token-string"
+        self.db.tables["guardian_contacts"] = [
+            {
+                "id": "contact-pending",
+                "user_id": "user-1",
+                "email": "legacy@example.com",
+                "status": "pending",
+                "is_active": True,
+                "verification_token_hash": service.hash_verification_token(token),
+                "verification_expires_at": "2099-01-01T00:00:00+00:00",
+                "verified_at": None,
+            }
+        ]
+        verification = guardian_alerts.verify_guardian_contact(token)
+        self.assertIn("Email verified", verification.body.decode())
+        self.assertEqual(self.db.tables["guardian_contacts"][0]["status"], "verified")
 
 
 class TestGuardianAlertDispatch(unittest.IsolatedAsyncioTestCase):

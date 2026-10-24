@@ -24,6 +24,33 @@ router = APIRouter(prefix="/api/v1/guardian-alerts", tags=["Guardian Alerts"])
 VERIFICATION_LIFETIME = timedelta(hours=24)
 
 
+def _send_guardian_added_alert(email: str, contact_id: str, verified_at: str) -> None:
+    unsubscribe_token = create_unsubscribe_token(contact_id, verified_at)
+    unsubscribe_url = (
+        f"{settings.PUBLIC_SERVER_URL.rstrip('/')}/api/v1/guardian-alerts/"
+        f"unsubscribe/{contact_id}?token={unsubscribe_token}"
+    )
+    subject = "TruVoice Alert: Added as trusted guardian contact"
+    text_body = (
+        "TruVoice Guardian Alert Notification\n\n"
+        "You have been added as a trusted guardian contact on TruVoice.\n\n"
+        "Elderly mode is active for this account. No email verification is required — "
+        "you will automatically receive urgent security alert notifications if severe scam activity "
+        "or fraudulent threats are detected during calls.\n\n"
+        "To stop receiving guardian alerts, you can unsubscribe at any time:\n"
+        f"{unsubscribe_url}\n"
+    )
+    html_body = (
+        "<h2>TruVoice Guardian Alert Notification</h2>"
+        "<p>You have been added as a trusted guardian contact on <strong>TruVoice</strong>.</p>"
+        "<p>Elderly mode is active for this account. <strong>No verification is required</strong> &mdash; "
+        "you will automatically receive urgent security alert notifications if severe scam activity "
+        "or fraudulent threats are detected during calls.</p>"
+        f'<p><a href="{unsubscribe_url}">Unsubscribe from guardian alerts</a></p>'
+    )
+    send_email(email, subject, text_body, html_body)
+
+
 def _verification_email(email: str, token: str) -> None:
     verify_url = (
         f"{settings.PUBLIC_SERVER_URL.rstrip('/')}/api/v1/guardian-alerts/"
@@ -143,15 +170,14 @@ def add_guardian_contact(
             detail="This email address is already on your guardian contact list.",
         )
 
-    token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc)
     contact_values: dict[str, Any] = {
         "email": email,
-        "status": "pending",
+        "status": "verified",
         "is_active": True,
-        "verification_token_hash": hash_verification_token(token),
-        "verification_expires_at": (now + VERIFICATION_LIFETIME).isoformat(),
-        "verified_at": None,
+        "verification_token_hash": None,
+        "verification_expires_at": None,
+        "verified_at": now.isoformat(),
         "updated_at": now.isoformat(),
     }
     try:
@@ -176,9 +202,13 @@ def add_guardian_contact(
         raise HTTPException(status_code=500, detail="Unable to save this guardian contact.")
     contact = result.data[0]
     try:
-        _verification_email(email, token)
+        _send_guardian_added_alert(
+            email=email,
+            contact_id=str(contact["id"]),
+            verified_at=str(contact.get("verified_at") or now.isoformat()),
+        )
     except Exception as exc:
-        logger.exception("Guardian contact verification email failed contact_id=%s", contact["id"])
+        logger.exception("Guardian contact alert email failed contact_id=%s", contact["id"])
         (
             db.table("guardian_contacts")
             .update(
@@ -195,7 +225,7 @@ def add_guardian_contact(
         )
         raise HTTPException(
             status_code=502,
-            detail="Unable to send the verification email. Please try again.",
+            detail="Unable to send the alert email. Please try again.",
         ) from exc
     return {
         "id": contact["id"],
