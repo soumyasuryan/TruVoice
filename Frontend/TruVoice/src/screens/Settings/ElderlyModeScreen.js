@@ -164,8 +164,7 @@ export default function ElderlyModeScreen({ navigation }) {
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Trusted email contacts</Text>
               <Text style={styles.description}>
-                Add up to {contactLimit} people. Each address must be verified before it can
-                receive an alert. Every alert includes an unsubscribe link.
+                Add up to {contactLimit} people. An alert notification is sent to the email immediately once added, with no link verification required. Every alert includes an unsubscribe link.
               </Text>
 
               <View style={styles.inputRow}>
@@ -219,8 +218,8 @@ export default function ElderlyModeScreen({ navigation }) {
                         ]}
                       >
                         {contact.status === 'verified'
-                          ? 'Verified'
-                          : 'Pending email verification'}
+                          ? 'Active'
+                          : 'Pending'}
                       </Text>
                     </View>
                     <TouchableOpacity

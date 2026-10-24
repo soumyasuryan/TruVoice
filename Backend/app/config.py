@@ -35,5 +35,19 @@ class Settings(BaseSettings):
     STT_MODEL_SIZE: str = os.getenv("STT_MODEL_SIZE", "large-v3-turbo")
     STT_COMPUTE_TYPE: str = os.getenv("STT_COMPUTE_TYPE", "float16")
 
+    # TinyFish Web Verification & Second Opinion Settings
+    TINYFISH_API_KEY: str = os.getenv("TINYFISH_API_KEY", "")
+    TINYFISH_ENABLED: bool = os.getenv("TINYFISH_ENABLED", "true").lower() in ("true", "1", "yes")
+    WEB_EVIDENCE_TIMEOUT_S: float = float(os.getenv("WEB_EVIDENCE_TIMEOUT_S", "12"))
+    CLAIM_MAX_PER_CALL: int = int(os.getenv("CLAIM_MAX_PER_CALL", "3"))
+    CLAIM_MIN_GAP_S: float = float(os.getenv("CLAIM_MIN_GAP_S", "8"))
+    VERIFY_WHEN_SEVERE: bool = os.getenv("VERIFY_WHEN_SEVERE", "false").lower() in ("true", "1", "yes")
+    CACHE_TTL_S: int = int(os.getenv("CACHE_TTL_S", "900"))
+    OFFICIAL_DOMAINS: str = os.getenv(
+        "OFFICIAL_DOMAINS",
+        "rbi.org.in,cybercrime.gov.in,pib.gov.in,sancharsaathi.gov.in,trai.gov.in,npci.org.in,cert-in.org.in,bank.sbi,sbi.co.in,hdfcbank.com,icicibank.com",
+    )
+
 settings = Settings()
+
 

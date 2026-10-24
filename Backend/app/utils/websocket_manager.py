@@ -82,5 +82,25 @@ class ConnectionManager:
                 if call_id in self.live_analysis_subscribers:
                     self.live_analysis_subscribers[call_id].difference_update(disconnected)
 
+    async def emit_call_event(self, call_id: str, event: str, payload: dict):
+        """
+        Emits an event to the call room across both WebSocket subscribers and Socket.IO.
+        """
+        message = {"type": event, "event": event, **payload}
+        await self.broadcast_to_call(call_id, message)
+        global sio_server
+        if sio_server is not None:
+            try:
+                await sio_server.emit(event, payload, room=call_id)
+            except Exception as exc:
+                logger.warning(f"Error emitting Socket.IO event {event} to call {call_id}: {exc}")
+
+sio_server = None
+
+def set_sio_server(server):
+    global sio_server
+    sio_server = server
+
 manager = ConnectionManager()
+
 

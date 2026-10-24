@@ -12,6 +12,9 @@ export function useVoiceAnalysis(callId) {
   const setCallData = useCallStore((s) => s.setCallData);
   const setConnectionState = useCallStore((s) => s.setConnectionState);
   const setRiskAlert = useCallStore((s) => s.setRiskAlert);
+  const setWebEvidence = useCallStore((s) => s.setWebEvidence);
+  const setPendingWebEvidence = useCallStore((s) => s.setPendingWebEvidence);
+  const setRiskUpdate = useCallStore((s) => s.setRiskUpdate);
 
   const updateAiAnalysis = useAiDetectionStore((s) => s.updateAnalysis || s.setAuthenticity);
 
@@ -58,6 +61,19 @@ export function useVoiceAnalysis(callId) {
                 unifiedRiskScore: data.unified_risk_score,
                 threatType: data.threat_type || 'NORMAL',
                 uiAlert: data.ui_alert || 'This call looks safe.',
+              });
+            }
+          } else if (data.type === 'web_evidence_pending' || data.event === 'web_evidence_pending') {
+            setPendingWebEvidence(data);
+          } else if (data.type === 'web_evidence' || data.event === 'web_evidence') {
+            setWebEvidence(data);
+          } else if (data.type === 'risk_update' || data.event === 'risk_update') {
+            setRiskUpdate(data);
+            if (typeof updateAiAnalysis === 'function') {
+              updateAiAnalysis({
+                authenticityScore: Math.round(Math.max(0, 100 - (data.final_score || 0))),
+                riskLevelLabel: data.final_level,
+                unifiedRiskScore: data.final_score,
               });
             }
           } else if (data.type === 'risk_alert') {

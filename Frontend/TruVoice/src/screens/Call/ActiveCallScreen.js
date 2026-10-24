@@ -129,6 +129,8 @@ export default function ActiveCallScreen({ navigation, route }) {
   const realTimeSignals = useCallStore((s) => s.signals);
   const riskAlert = useCallStore((s) => s.riskAlert);
   const connectionState = useCallStore((s) => s.connectionState);
+  const webEvidence = useCallStore((s) => s.webEvidence);
+  const pendingWebEvidence = useCallStore((s) => s.pendingWebEvidence);
 
   const storeContacts = useContactsStore((s) => s.contacts);
   const aiStore = useAiDetectionStore();
@@ -558,6 +560,50 @@ export default function ActiveCallScreen({ navigation, route }) {
                       <Text style={styles.scamCategoryText}>
                         {scamCategory}
                       </Text>
+                    ) : null}
+                    {pendingWebEvidence ? (
+                      <View style={[styles.uiAlertBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: '#3B82F6', marginTop: 8 }]}>
+                        <ActivityIndicator size="small" color="#60A5FA" style={{ marginRight: 6 }} />
+                        <Text style={[styles.uiAlertText, { color: '#93C5FD' }]}>
+                          Verifying caller claim via live web...
+                        </Text>
+                      </View>
+                    ) : null}
+                    {webEvidence ? (
+                      <View style={[
+                        styles.uiAlertBanner,
+                        {
+                          backgroundColor: webEvidence.verdict === 'CONTRADICTED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                          borderColor: webEvidence.verdict === 'CONTRADICTED' ? '#EF4444' : '#22C55E',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          marginTop: 8,
+                        }
+                      ]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                          <Ionicons
+                            name={webEvidence.verdict === 'CONTRADICTED' ? 'warning-outline' : 'checkmark-circle-outline'}
+                            size={16}
+                            color={webEvidence.verdict === 'CONTRADICTED' ? '#EF4444' : '#22C55E'}
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text style={{
+                            color: webEvidence.verdict === 'CONTRADICTED' ? '#FCA5A5' : '#86EFAC',
+                            fontWeight: '700',
+                            fontSize: 12,
+                          }}>
+                            Web Second Opinion: {webEvidence.verdict}
+                          </Text>
+                        </View>
+                        <Text style={{ color: '#E4E4E7', fontSize: 11, marginBottom: 2 }}>
+                          {webEvidence.reason}
+                        </Text>
+                        {webEvidence.sources && webEvidence.sources.length > 0 ? (
+                          <Text style={{ color: '#A1A1AA', fontSize: 10 }}>
+                            Source: {webEvidence.sources[0]?.title || webEvidence.sources[0]?.url}
+                          </Text>
+                        ) : null}
+                      </View>
                     ) : null}
                     {analysisError ? (
                       <Text style={styles.analysisErrorText}>

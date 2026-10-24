@@ -65,6 +65,35 @@ app.include_router(guardian_alerts.router)
 app.include_router(voice.router)
 app.include_router(voice.ws_router)
 
+# Socket.IO Real-Time Integration
+try:
+    import socketio
+    from app.utils.websocket_manager import set_sio_server
+
+    sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+    set_sio_server(sio)
+
+    @sio.event
+    async def connect(sid, environ, auth=None):
+        logger.info(f"Socket.IO client connected: {sid}")
+
+    @sio.event
+    async def join_call(sid, data):
+        call_id = data.get("call_id") if isinstance(data, dict) else data
+        if call_id:
+            sio.enter_room(sid, str(call_id))
+            logger.info(f"Socket.IO client {sid} joined room {call_id}")
+
+    @sio.event
+    async def disconnect(sid):
+        logger.info(f"Socket.IO client disconnected: {sid}")
+
+    sio_app = socketio.ASGIApp(sio, other_asgi_app=app)
+except Exception as exc:
+    logger.warning(f"Socket.IO initialization skipped: {exc}")
+    sio = None
+    sio_app = app
+
 
 @app.get("/")
 def root():
@@ -78,9 +107,10 @@ def root():
 
 
 # AWS Lambda Handler Wrapper
-handler = Mangum(app)
+handler = Mangum(sio_app)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8000, reload=True)
+
 

@@ -35,3 +35,4 @@ spacy
 python-multipart>=0.0.6
 agora-token-builder>=1.0.0
 websockets>=12.0
+python-socketio>=5.11.0

@@ -40,6 +40,10 @@ export const useCallStore = create((set, get) => ({
   signals: [],
   riskAlert: null,
 
+  webEvidence: null,
+  pendingWebEvidence: null,
+  riskUpdate: null,
+
   isMuted: false,
   isSpeakerOn: false,
   isVideoEnabled: false,
@@ -62,6 +66,18 @@ export const useCallStore = create((set, get) => ({
 
   setCallData: (data) => set((state) => ({ ...state, ...data })),
   setRiskAlert: (riskAlert) => set({ riskAlert }),
+  setWebEvidence: (webEvidence) => set({ webEvidence, pendingWebEvidence: null }),
+  setPendingWebEvidence: (pendingWebEvidence) => set({ pendingWebEvidence }),
+  setRiskUpdate: (riskUpdate) =>
+    set((state) => ({
+      ...state,
+      riskUpdate,
+      riskLevel: riskUpdate.final_level || state.riskLevel,
+      trustScore:
+        typeof riskUpdate.final_score === 'number'
+          ? Math.round(Math.max(0, 100 - riskUpdate.final_score))
+          : state.trustScore,
+    })),
 
   toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
   toggleSpeaker: () => set((state) => ({ isSpeakerOn: !state.isSpeakerOn })),
@@ -91,6 +107,9 @@ export const useCallStore = create((set, get) => ({
       transcript: '',
       signals: [],
       riskAlert: null,
+      webEvidence: null,
+      pendingWebEvidence: null,
+      riskUpdate: null,
       isMuted: false,
       isSpeakerOn: false,
       isVideoEnabled: false,

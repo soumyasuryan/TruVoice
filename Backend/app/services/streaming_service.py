@@ -12,6 +12,12 @@ from app.database import get_supabase
 from app.utils.pipeline import get_pipeline
 from app.utils.websocket_manager import manager
 from app.services.guardian_alert_service import SevereWindowGate, dispatch_guardian_alert
+from app.services.web_verification_service import (
+    CallVerificationSession,
+    compute_web_verification_risk,
+    detect_claims_and_questions,
+    verify_claim_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,7 @@ class VoiceStreamSession:
         self.chunk_duration_sec = settings.VOICE_ANALYSIS_CHUNK_SECONDS
         self._processing_lock = asyncio.Lock()
         self._guardian_alert_gate = SevereWindowGate()
+        self.verification_session = CallVerificationSession(call_id)
         # 8000Hz * 1 byte/sample (mu-law) = 8000 bytes per second
         self.target_buffer_size = int(8000 * self.chunk_duration_sec)
 
@@ -178,11 +185,114 @@ class VoiceStreamSession:
                 _guardian_alert_tasks.add(task)
                 task.add_done_callback(_guardian_alert_tasks.discard)
 
+            # Web Verification second-opinion check
+            v_task = asyncio.create_task(
+                self.run_web_verification(
+                    transcript=full_transcript,
+                    base_score=unified_risk,
+                    base_level=risk_level,
+                )
+            )
+            _verification_tasks.add(v_task)
+            v_task.add_done_callback(_verification_tasks.discard)
+
             # Update latest database record asynchronously
             await loop.run_in_executor(None, self._update_call_record_db, payload)
 
         except Exception as e:
             logger.error(f"Error processing audio chunk for call {self.call_id}: {e}")
+
+    async def run_web_verification(self, transcript: str, base_score: float, base_level: str):
+        try:
+            if not self.verification_session.should_verify(base_level):
+                return
+
+            detected_claims = detect_claims_and_questions(transcript)
+            new_claim = None
+            for claim_data in detected_claims:
+                if claim_data["claim_id"] not in self.verification_session.checked_claim_ids:
+                    new_claim = claim_data
+                    break
+
+            if not new_claim:
+                return
+
+            claim_id = new_claim["claim_id"]
+            claim_text = new_claim["claim_text"]
+            question = new_claim["question"]
+
+            self.verification_session.record_check_started(claim_id)
+
+            # 1. Emit web_evidence_pending
+            pending_payload = {
+                "call_id": self.call_id,
+                "claim_id": claim_id,
+                "claim_text": claim_text,
+                "question": question,
+            }
+            await manager.emit_call_event(self.call_id, "web_evidence_pending", pending_payload)
+
+            # 2. Run verification pipeline
+            evidence = await verify_claim_pipeline(
+                call_id=self.call_id,
+                claim_id=claim_id,
+                claim_text=claim_text,
+                question=question,
+            )
+
+            # 3. Emit web_evidence
+            await manager.emit_call_event(self.call_id, "web_evidence", evidence)
+
+            # 4. If verdict is CONTRADICTED, raise call risk and emit risk_update
+            if evidence.get("verdict") == "CONTRADICTED":
+                self.verification_session.record_contradiction(evidence)
+                reasons = [f"Web check contradicted: '{claim_text}' ({evidence.get('reason', '')})"]
+                risk_update = compute_web_verification_risk(
+                    base_score=base_score,
+                    base_level=base_level,
+                    contradicted_count=len(self.verification_session.contradicted_claims),
+                    reasons=reasons,
+                )
+                risk_payload = {
+                    "call_id": self.call_id,
+                    "base_score": risk_update["base_score"],
+                    "web_boost": risk_update["web_boost"],
+                    "final_score": risk_update["final_score"],
+                    "base_level": risk_update["base_level"],
+                    "final_level": risk_update["final_level"],
+                    "reasons": risk_update["reasons"],
+                }
+                await manager.emit_call_event(self.call_id, "risk_update", risk_payload)
+
+                if risk_update["final_level"] in ["SEVERE", "MODERATE"]:
+                    alert_payload = {
+                        "type": "risk_alert",
+                        "call_id": self.call_id,
+                        "risk_level": risk_update["final_level"],
+                        "threat_type": "CONTRADICTED_CLAIM_SCAM",
+                        "message": f"Web verification contradicted caller claims: {evidence.get('reason')}",
+                    }
+                    await manager.emit_call_event(self.call_id, "risk_alert", alert_payload)
+
+                if self._guardian_alert_gate.observe(risk_update["final_level"]):
+                    guardian_analysis = {
+                        "risk_level": risk_update["final_level"],
+                        "unified_risk_score": risk_update["final_score"],
+                        "scam_intent_score": risk_update["final_score"],
+                        "ai_voice_probability": 0.0,
+                        "scam_category": "Contradicted Claim Fraud",
+                        "threat_type": "Suspicious call",
+                        "flagged_keywords": [claim_text],
+                        "reasoning": evidence.get("reason", ""),
+                    }
+                    task = asyncio.create_task(
+                        dispatch_guardian_alert(self.call_id, guardian_analysis)
+                    )
+                    _guardian_alert_tasks.add(task)
+                    task.add_done_callback(_guardian_alert_tasks.discard)
+
+        except Exception as exc:
+            logger.warning("Web verification execution failed for call %s: %s", self.call_id, exc)
 
     def _update_call_record_db(self, payload: dict):
         try:
@@ -204,6 +314,7 @@ class VoiceStreamSession:
 # Active sessions registry
 active_stream_sessions: dict[str, VoiceStreamSession] = {}
 _guardian_alert_tasks: set[asyncio.Task] = set()
+_verification_tasks: set[asyncio.Task] = set()
 
 def get_or_create_stream_session(call_id: str) -> VoiceStreamSession:
     if call_id not in active_stream_sessions:
@@ -213,3 +324,4 @@ def get_or_create_stream_session(call_id: str) -> VoiceStreamSession:
 def remove_stream_session(call_id: str):
     if call_id in active_stream_sessions:
         del active_stream_sessions[call_id]
+
