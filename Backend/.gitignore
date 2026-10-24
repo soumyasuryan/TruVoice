@@ -1,0 +1,7 @@
+.env
+/.venv
+/supabase
+__pycache__/
+/test_voice
+test_speech.wav
+/model
