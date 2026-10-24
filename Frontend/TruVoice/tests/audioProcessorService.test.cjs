@@ -112,6 +112,44 @@ test('waits for caller audio, then sends 5-second audio windows and shows analys
   audioProcessorService.stop();
 });
 
+test('fires the demo threshold only after seven seconds of detected voice activity', async () => {
+  let thresholdCount = 0;
+  const { audioProcessorService } = createProcessor(async () => ({ data: null }));
+
+  await audioProcessorService.start(
+    'test-call',
+    'caller',
+    () => {},
+    10000,
+    null,
+    () => {
+      thresholdCount += 1;
+    },
+  );
+
+  const silenceFrame = createPcmFrame(0);
+  const voiceFrame = createPcmFrame(2000);
+  submitFrames(audioProcessorService, silenceFrame, 400);
+  assert.equal(thresholdCount, 0, 'silence must not start the demo threshold');
+
+  submitFrames(audioProcessorService, voiceFrame, 349);
+  assert.equal(thresholdCount, 0, 'the threshold must wait for seven seconds of voice');
+
+  submitFrames(audioProcessorService, voiceFrame, 1);
+  assert.equal(thresholdCount, 1);
+  submitFrames(audioProcessorService, voiceFrame, 10);
+  assert.equal(thresholdCount, 1, 'the threshold should fire once per audio window');
+
+  audioProcessorService.setMuted(true);
+  audioProcessorService.setMuted(false);
+  submitFrames(audioProcessorService, voiceFrame, 349);
+  assert.equal(thresholdCount, 1, 'muting resets the detected-voice duration');
+  submitFrames(audioProcessorService, voiceFrame, 1);
+  assert.equal(thresholdCount, 2);
+
+  audioProcessorService.stop();
+});
+
 test('does not publish a late result after the call processor stops', async () => {
   let resolveAnalysis;
   const results = [];

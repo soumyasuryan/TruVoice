@@ -7,6 +7,24 @@ export const getRiskScoreColor = (score) => {
   return colors.success;
 };
 
+export const getCallRiskColor = (riskLevel, score) => {
+  const normalizedLevel = String(riskLevel || '').toLowerCase();
+  const normalizedScore = Number(score) || 0;
+  if (
+    normalizedScore >= 70 ||
+    ['severe', 'critical', 'high'].some((level) => normalizedLevel.includes(level))
+  ) {
+    return colors.danger;
+  }
+  if (
+    normalizedScore >= 50 ||
+    ['moderate', 'medium'].some((level) => normalizedLevel.includes(level))
+  ) {
+    return colors.warning;
+  }
+  return colors.success;
+};
+
 export const getVoiceAuthenticityColor = (score) => {
   const normalizedScore = Number(score) || 0;
   if (normalizedScore < 50) return colors.danger;

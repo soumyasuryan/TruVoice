@@ -42,7 +42,7 @@ import { useCallStore } from '../../store/callStore';
 import { useVoiceAnalysis } from '../../hooks/useVoiceAnalysis';
 import { agoraService } from '../../services/agora/agoraService';
 import { api } from '../../services/api/client';
-import { getRiskScoreColor, getVoiceAuthenticityColor } from '../../utils/scoreColors';
+import { getCallRiskColor, getRiskScoreColor, getVoiceAuthenticityColor } from '../../utils/scoreColors';
 import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 import { useSettingsStore } from '../../store/settingsStore';
 const ENABLE_AI_ANALYSIS = true;
@@ -107,6 +107,7 @@ function makeDemoAnalysisScores() {
     unifiedRiskScore: Math.round(
       (Math.max(aiFraction, scamFraction) * 0.7 + aiFraction * scamFraction * 0.3) * 100,
     ),
+    riskLevel: 'SAFE',
   };
 }
 
@@ -128,6 +129,7 @@ export default function ActiveCallScreen({ navigation, route }) {
   const [dtmfText, setDtmfText] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [demoScores, setDemoScores] = useState(null);
+  const [hasSevenSecondsOfVoice, setHasSevenSecondsOfVoice] = useState(false);
   const [hasRealAnalysis, setHasRealAnalysis] = useState(false);
   const [hasReceivedAnalysisResult, setHasReceivedAnalysisResult] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
@@ -178,6 +180,11 @@ export default function ActiveCallScreen({ navigation, route }) {
   const displayedScamIntentScore = hasAnalysis ? scamIntentScore : demoScores?.scamIntentScore ?? scamIntentScore;
   const displayedUnifiedRiskScore = hasAnalysis ? unifiedRiskScore : demoScores?.unifiedRiskScore ?? unifiedRiskScore;
   const displayedAuthenticity = getHumanVoiceProbability(displayedAiProbability);
+  const displayedRiskLevel = hasAnalysis
+    ? unifiedRiskScore >= 70 && !String(riskLevelLabel).toLowerCase().includes('severe')
+      ? 'HIGH RISK'
+      : riskLevelLabel || 'UNKNOWN'
+    : demoScores?.riskLevel;
   const isSevereRisk =
     String(realTimeRiskLevel || riskAlert?.riskLevel || riskLevelLabel || '').toUpperCase() ===
     'SEVERE';
@@ -235,25 +242,25 @@ export default function ActiveCallScreen({ navigation, route }) {
   const shouldAnalyze = ENABLE_AI_ANALYSIS && !isSavedContact && !analysisStopped;
 
   useEffect(() => {
-    if (!shouldAnalyze || hasAnalysis || hasReceivedAnalysisResult) {
+    if (
+      !shouldAnalyze ||
+      isMuted ||
+      hasAnalysis ||
+      hasReceivedAnalysisResult ||
+      !hasSevenSecondsOfVoice
+    ) {
       setDemoScores(null);
       return undefined;
     }
 
-    const startDemoScores = () => {
+    setDemoScores(makeDemoAnalysisScores());
+    const interval = setInterval(() => {
       setDemoScores(makeDemoAnalysisScores());
-      interval = setInterval(() => {
-        setDemoScores(makeDemoAnalysisScores());
-      }, 7000);
-    };
-
-    let interval;
-    const timeout = setTimeout(startDemoScores, 5000);
+    }, 7000);
     return () => {
-      clearTimeout(timeout);
-      if (interval) clearInterval(interval);
+      clearInterval(interval);
     };
-  }, [shouldAnalyze, hasAnalysis, hasReceivedAnalysisResult]);
+  }, [shouldAnalyze, isMuted, hasAnalysis, hasReceivedAnalysisResult, hasSevenSecondsOfVoice]);
 
   const finishCall = useCallback((reason = 'unknown') => {
     if (hasEndedRef.current) return;
@@ -384,6 +391,7 @@ export default function ActiveCallScreen({ navigation, route }) {
         },
         config.audioChunkIntervalMs,
         (status) => setIsAnalyzing(status === 'analyzing'),
+        () => setHasSevenSecondsOfVoice(true),
       );
       console.log('[ActiveCallScreen] audioProcessorService started (2s delayed to protect Agora audio path)');
     }, 2000);
@@ -409,6 +417,10 @@ export default function ActiveCallScreen({ navigation, route }) {
   const handleToggleMute = useCallback(() => {
     const next = !isMuted;
     setIsMuted(next);
+    if (next) {
+      setHasSevenSecondsOfVoice(false);
+      setDemoScores(null);
+    }
     agoraService.setMuted(next);
     audioProcessorService.setMuted(next);
   }, [isMuted]);
@@ -435,6 +447,8 @@ export default function ActiveCallScreen({ navigation, route }) {
           onPress: () => {
             setAnalysisStopped(true);
             setShowAnalysisCard(false);
+            setHasSevenSecondsOfVoice(false);
+            setDemoScores(null);
             audioProcessorService.setStopped(true);
           },
         },
@@ -464,14 +478,14 @@ export default function ActiveCallScreen({ navigation, route }) {
   const getBubbleColor = () => {
     if (analysisStopped) return '#71717A';
     if (!hasAnalysis && !demoScores) return colors.textMuted;
-    return getVoiceAuthenticityColor(displayedAuthenticity);
+    return getCallRiskColor(displayedRiskLevel, displayedUnifiedRiskScore);
   };
 
   const getBubbleIcon = () => {
     if (analysisStopped) return 'pause-circle';
     if (!hasAnalysis && !demoScores) return 'hourglass-outline';
-    if (displayedAuthenticity < 50) return 'warning';
-    if (displayedAuthenticity < 80) return 'alert-circle';
+    if (getCallRiskColor(displayedRiskLevel, displayedUnifiedRiskScore) === colors.danger) return 'warning';
+    if (getCallRiskColor(displayedRiskLevel, displayedUnifiedRiskScore) === colors.warning) return 'alert-circle';
     return 'shield-checkmark';
   };
 
@@ -527,7 +541,7 @@ export default function ActiveCallScreen({ navigation, route }) {
               {!analysisStopped && (
                 <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
                   {hasAnalysis || demoScores
-                    ? `${displayedAuthenticity}%`
+                    ? displayedRiskLevel
                     : isAnalyzing
                       ? 'Analyzing...'
                       : 'Listening...'}

@@ -93,9 +93,12 @@ class AudioProcessorService {
     this.intervalMs = config.audioChunkIntervalMs;
     this.audioWindowDurationMs = 0;
     this.hasDetectedCallerAudio = false;
+    this.detectedVoiceDurationMs = 0;
+    this.hasReachedVoiceDetectionThreshold = false;
     this.pendingAnalysisCount = 0;
     this.analysisGeneration = 0;
     this.onStatusChange = null;
+    this.onVoiceDetectionThreshold = null;
     this.sampleRate = 16000;
     this.numChannels = 1;
   }
@@ -106,6 +109,7 @@ class AudioProcessorService {
     onAnalysisCallback,
     intervalMs = config.audioChunkIntervalMs,
     onStatusChange = null,
+    onVoiceDetectionThreshold = null,
   ) {
     if (this.isProcessing) {
       this.stop();
@@ -121,9 +125,12 @@ class AudioProcessorService {
     this.pcmChunks = [];
     this.audioWindowDurationMs = 0;
     this.hasDetectedCallerAudio = false;
+    this.detectedVoiceDurationMs = 0;
+    this.hasReachedVoiceDetectionThreshold = false;
     this.pendingAnalysisCount = 0;
     this.analysisGeneration += 1;
     this.onStatusChange = onStatusChange;
+    this.onVoiceDetectionThreshold = onVoiceDetectionThreshold;
     this.onStatusChange?.('listening');
 
     console.log(`Starting AudioProcessorService for call ${callId}, caller ${callerNumber}`);
@@ -167,14 +174,26 @@ class AudioProcessorService {
     }
 
     if (frameBytes && frameBytes.length > 0) {
-      if (!this.hasDetectedCallerAudio && !hasVoiceActivity(frameBytes, this.numChannels)) {
+      const frameDurationMs =
+        (frameBytes.length / (2 * this.numChannels * this.sampleRate)) * 1000;
+      const hasVoice = hasVoiceActivity(frameBytes, this.numChannels);
+      if (!this.hasDetectedCallerAudio && !hasVoice) {
         return;
       }
 
       this.hasDetectedCallerAudio = true;
+      if (hasVoice) {
+        this.detectedVoiceDurationMs += frameDurationMs;
+        if (
+          !this.hasReachedVoiceDetectionThreshold &&
+          this.detectedVoiceDurationMs >= 7000
+        ) {
+          this.hasReachedVoiceDetectionThreshold = true;
+          this.onVoiceDetectionThreshold?.();
+        }
+      }
       this.pcmChunks.push(frameBytes);
-      this.audioWindowDurationMs +=
-        (frameBytes.length / (2 * this.numChannels * this.sampleRate)) * 1000;
+      this.audioWindowDurationMs += frameDurationMs;
 
       if (this.audioWindowDurationMs >= this.intervalMs) {
         this._flushAndAnalyzeBuffer().catch((error) => {
@@ -259,6 +278,8 @@ class AudioProcessorService {
     this.pcmChunks = [];
     this.audioWindowDurationMs = 0;
     this.hasDetectedCallerAudio = false;
+    this.detectedVoiceDurationMs = 0;
+    this.hasReachedVoiceDetectionThreshold = false;
     this.onStatusChange?.(this.isMuted || this.isStopped ? 'paused' : 'listening');
   }
 
@@ -276,8 +297,11 @@ class AudioProcessorService {
     this.pcmChunks = [];
     this.audioWindowDurationMs = 0;
     this.hasDetectedCallerAudio = false;
+    this.detectedVoiceDurationMs = 0;
+    this.hasReachedVoiceDetectionThreshold = false;
     this.pendingAnalysisCount = 0;
     this.onStatusChange = null;
+    this.onVoiceDetectionThreshold = null;
     console.log('AudioProcessorService stopped.');
   }
 }
