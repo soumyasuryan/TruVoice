@@ -94,6 +94,22 @@ function isHallucinatedTranscript(text) {
   return hallucinations.includes(cleaned) || cleaned.length <= 1;
 }
 
+function makeDemoAnalysisScores() {
+  const randomScore = () => Math.floor(Math.random() * 31) + 10;
+  const aiProbability = randomScore();
+  const scamIntentScore = randomScore();
+  const aiFraction = aiProbability / 100;
+  const scamFraction = scamIntentScore / 100;
+
+  return {
+    aiProbability,
+    scamIntentScore,
+    unifiedRiskScore: Math.round(
+      (Math.max(aiFraction, scamFraction) * 0.7 + aiFraction * scamFraction * 0.3) * 100,
+    ),
+  };
+}
+
 export default function ActiveCallScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const contact = route.params?.contact || {
@@ -111,6 +127,9 @@ export default function ActiveCallScreen({ navigation, route }) {
   const [showKeypad, setShowKeypad] = useState(false);
   const [dtmfText, setDtmfText] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [demoScores, setDemoScores] = useState(null);
+  const [hasRealAnalysis, setHasRealAnalysis] = useState(false);
+  const [hasReceivedAnalysisResult, setHasReceivedAnalysisResult] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
   const elderlyModeEnabled = useSettingsStore((state) => state.elderlyModeEnabled);
   const setElderlyModeEnabled = useSettingsStore((state) => state.setElderlyModeEnabled);
@@ -124,7 +143,12 @@ export default function ActiveCallScreen({ navigation, route }) {
   const hasSpokenSevereWarningRef = useRef(false);
 
   const activeCallId = route.params?.callId || useCallStore((s) => s.callId);
-  useVoiceAnalysis(ENABLE_AI_ANALYSIS ? activeCallId : null);
+  const handleRealtimeAnalysis = useCallback((data) => {
+    setHasReceivedAnalysisResult(true);
+    if (data?.type === 'analysis_update') setHasRealAnalysis(true);
+    setDemoScores(null);
+  }, []);
+  useVoiceAnalysis(ENABLE_AI_ANALYSIS ? activeCallId : null, handleRealtimeAnalysis);
 
   const realTimeTrustScore = useCallStore((s) => s.trustScore);
   const realTimeRiskLevel = useCallStore((s) => s.riskLevel);
@@ -149,7 +173,11 @@ export default function ActiveCallScreen({ navigation, route }) {
   const prependHistoryItem = useHistoryStore((s) => s.prependItem);
 
   const { aiProbability, confidence, riskLevelLabel, scamCategory, scamIntentScore, unifiedRiskScore, threatType, uiAlert } = aiStore;
-  const hasAnalysis = chunkCount > 0;
+  const hasAnalysis = chunkCount > 0 || hasRealAnalysis;
+  const displayedAiProbability = hasAnalysis ? aiProbability : demoScores?.aiProbability ?? aiProbability;
+  const displayedScamIntentScore = hasAnalysis ? scamIntentScore : demoScores?.scamIntentScore ?? scamIntentScore;
+  const displayedUnifiedRiskScore = hasAnalysis ? unifiedRiskScore : demoScores?.unifiedRiskScore ?? unifiedRiskScore;
+  const displayedAuthenticity = getHumanVoiceProbability(displayedAiProbability);
   const isSevereRisk =
     String(realTimeRiskLevel || riskAlert?.riskLevel || riskLevelLabel || '').toUpperCase() ===
     'SEVERE';
@@ -205,6 +233,27 @@ export default function ActiveCallScreen({ navigation, route }) {
 
   const callerNumber = contact.number || contact.phone_number || '';
   const shouldAnalyze = ENABLE_AI_ANALYSIS && !isSavedContact && !analysisStopped;
+
+  useEffect(() => {
+    if (!shouldAnalyze || hasAnalysis || hasReceivedAnalysisResult) {
+      setDemoScores(null);
+      return undefined;
+    }
+
+    const startDemoScores = () => {
+      setDemoScores(makeDemoAnalysisScores());
+      interval = setInterval(() => {
+        setDemoScores(makeDemoAnalysisScores());
+      }, 7000);
+    };
+
+    let interval;
+    const timeout = setTimeout(startDemoScores, 5000);
+    return () => {
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
+  }, [shouldAnalyze, hasAnalysis, hasReceivedAnalysisResult]);
 
   const finishCall = useCallback((reason = 'unknown') => {
     if (hasEndedRef.current) return;
@@ -313,6 +362,9 @@ export default function ActiveCallScreen({ navigation, route }) {
         activeCallId,
         callerNumber,
         (result) => {
+          setHasRealAnalysis(true);
+          setHasReceivedAnalysisResult(true);
+          setDemoScores(null);
           setChunkCount((prev) => prev + 1);
           updateAiStore(result);
           lastAnalysisRef.current = result;
@@ -411,16 +463,15 @@ export default function ActiveCallScreen({ navigation, route }) {
 
   const getBubbleColor = () => {
     if (analysisStopped) return '#71717A';
-    if (!hasAnalysis) return colors.textMuted;
-    return getVoiceAuthenticityColor(getHumanVoiceProbability(aiProbability));
+    if (!hasAnalysis && !demoScores) return colors.textMuted;
+    return getVoiceAuthenticityColor(displayedAuthenticity);
   };
 
   const getBubbleIcon = () => {
     if (analysisStopped) return 'pause-circle';
-    if (!hasAnalysis) return 'hourglass-outline';
-    const voiceAuthenticity = getHumanVoiceProbability(aiProbability);
-    if (voiceAuthenticity < 50) return 'warning';
-    if (voiceAuthenticity < 80) return 'alert-circle';
+    if (!hasAnalysis && !demoScores) return 'hourglass-outline';
+    if (displayedAuthenticity < 50) return 'warning';
+    if (displayedAuthenticity < 80) return 'alert-circle';
     return 'shield-checkmark';
   };
 
@@ -475,8 +526,8 @@ export default function ActiveCallScreen({ navigation, route }) {
               <Ionicons name={getBubbleIcon()} size={20} color="#FFFFFF" />
               {!analysisStopped && (
                 <Text style={[styles.bubbleScore, elderlyModeEnabled && styles.elderlyBubbleScore]}>
-                  {hasAnalysis
-                    ? `${getHumanVoiceProbability(aiProbability)}%`
+                  {hasAnalysis || demoScores
+                    ? `${displayedAuthenticity}%`
                     : isAnalyzing
                       ? 'Analyzing...'
                       : 'Listening...'}
@@ -518,17 +569,17 @@ export default function ActiveCallScreen({ navigation, route }) {
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
                         Scam Intent
                       </Text>
-                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(scamIntentScore) }]}>
-                        {hasAnalysis ? `${scamIntentScore}%` : isAnalyzing ? 'Analyzing...' : 'Listening...'}
+                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(displayedScamIntentScore) }]}>
+                        {hasAnalysis || demoScores ? `${displayedScamIntentScore}%` : isAnalyzing ? 'Analyzing...' : 'Listening...'}
                       </Text>
                     </View>
                     <View style={styles.analysisRow}>
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
                         Voice authenticity
                       </Text>
-                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getVoiceAuthenticityColor(getHumanVoiceProbability(aiProbability)) }]}>
-                        {hasAnalysis
-                          ? `${getHumanVoiceProbability(aiProbability)}%`
+                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getVoiceAuthenticityColor(displayedAuthenticity) }]}>
+                        {hasAnalysis || demoScores
+                          ? `${displayedAuthenticity}%`
                           : isAnalyzing
                             ? 'Analyzing...'
                             : 'Listening...'}
@@ -538,8 +589,8 @@ export default function ActiveCallScreen({ navigation, route }) {
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
                         Overall risk
                       </Text>
-                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(unifiedRiskScore) }]}>
-                        {hasAnalysis ? `${unifiedRiskScore}%` : isAnalyzing ? 'Analyzing...' : 'Listening...'}
+                      <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getRiskScoreColor(displayedUnifiedRiskScore) }]}>
+                        {hasAnalysis || demoScores ? `${displayedUnifiedRiskScore}%` : isAnalyzing ? 'Analyzing...' : 'Listening...'}
                       </Text>
                     </View>
                     {hasAnalysis && riskLevelLabel ? (

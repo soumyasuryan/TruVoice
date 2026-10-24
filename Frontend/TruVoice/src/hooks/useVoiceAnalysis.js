@@ -4,9 +4,10 @@ import { useAuthStore } from '../store/authStore';
 import { useCallStore } from '../store/callStore';
 import { useAiDetectionStore } from '../store/aiDetectionStore';
 
-export function useVoiceAnalysis(callId) {
+export function useVoiceAnalysis(callId, onAnalysisUpdate) {
   const wsRef = useRef(null);
   const reconnectCountRef = useRef(0);
+  const analysisUpdateRef = useRef(onAnalysisUpdate);
   const token = useAuthStore((s) => s.token);
 
   const setCallData = useCallStore((s) => s.setCallData);
@@ -17,6 +18,10 @@ export function useVoiceAnalysis(callId) {
   const setRiskUpdate = useCallStore((s) => s.setRiskUpdate);
 
   const updateAiAnalysis = useAiDetectionStore((s) => s.updateAnalysis || s.setAuthenticity);
+
+  useEffect(() => {
+    analysisUpdateRef.current = onAnalysisUpdate;
+  }, [onAnalysisUpdate]);
 
   const connect = useCallback(() => {
     if (!callId || !token) return;
@@ -37,6 +42,7 @@ export function useVoiceAnalysis(callId) {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'analysis_update') {
+            analysisUpdateRef.current?.(data);
             setCallData({
               trustScore: data.trust_score,
               confidence: data.confidence,
@@ -68,6 +74,7 @@ export function useVoiceAnalysis(callId) {
           } else if (data.type === 'web_evidence' || data.event === 'web_evidence') {
             setWebEvidence(data);
           } else if (data.type === 'risk_update' || data.event === 'risk_update') {
+            analysisUpdateRef.current?.(data);
             setRiskUpdate(data);
             if (typeof updateAiAnalysis === 'function') {
               updateAiAnalysis({
