@@ -38,7 +38,9 @@ async def analyze_audio(
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        result = get_pipeline().analyze_audio_sample(temp_path)
+        loop = asyncio.get_running_loop()
+        pipeline = get_pipeline()
+        result = await loop.run_in_executor(None, pipeline.analyze_audio_sample, temp_path)
         _save_analysis_history(user_id, caller_number, result)
         return result
     except HTTPException:
@@ -83,7 +85,9 @@ async def analyze_base64_audio(
         with open(temp_path, "wb") as f:
             f.write(audio_bytes)
 
-        result = get_pipeline().analyze_audio_sample(temp_path)
+        loop = asyncio.get_running_loop()
+        pipeline = get_pipeline()
+        result = await loop.run_in_executor(None, pipeline.analyze_audio_sample, temp_path)
         _save_analysis_history(user_id, caller_num, result)
 
         if payload.call_id:
@@ -151,7 +155,6 @@ async def analyze_base64_audio(
                 _guardian_alert_tasks.add(task)
                 task.add_done_callback(_guardian_alert_tasks.discard)
 
-            loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None, _update_voice_call_record, payload.call_id, update_payload
             )
@@ -219,4 +222,3 @@ def _update_voice_call_record(call_id: str, payload: dict) -> None:
         }).eq("id", call_id).execute()
     except Exception as exc:
         logger.warning(f"Could not update voice_calls record: {exc}")
-

@@ -72,10 +72,8 @@ class VoiceStreamSession:
             current_time = asyncio.get_event_loop().time()
             if len(self.audio_buffer) >= self.target_buffer_size and (current_time - self.last_analysis_time) >= settings.VOICE_ANALYSIS_INTERVAL_SECONDS:
                 self.last_analysis_time = current_time
-                # Extract chunk bytes to analyze
-                chunk_mulaw = bytes(self.audio_buffer)
-                # Retain last 1 second for context continuity
-                self.audio_buffer = self.audio_buffer[-8000:]
+                chunk_mulaw = bytes(self.audio_buffer[:self.target_buffer_size])
+                del self.audio_buffer[:self.target_buffer_size]
                 
                 # Execute AI analysis asynchronously without blocking event loop
                 asyncio.create_task(self.process_audio_chunk(chunk_mulaw))
@@ -338,4 +336,3 @@ def get_or_create_stream_session(call_id: str) -> VoiceStreamSession:
 def remove_stream_session(call_id: str):
     if call_id in active_stream_sessions:
         del active_stream_sessions[call_id]
-

@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # Server & Voice Stream Settings
     PUBLIC_SERVER_URL: str = os.getenv("PUBLIC_SERVER_URL", "http://localhost:8000")
-    VOICE_ANALYSIS_CHUNK_SECONDS: float = float(os.getenv("VOICE_ANALYSIS_CHUNK_SECONDS", "3.0"))
-    VOICE_ANALYSIS_INTERVAL_SECONDS: float = float(os.getenv("VOICE_ANALYSIS_INTERVAL_SECONDS", "3.0"))
+    VOICE_ANALYSIS_CHUNK_SECONDS: float = float(os.getenv("VOICE_ANALYSIS_CHUNK_SECONDS", "5.0"))
+    VOICE_ANALYSIS_INTERVAL_SECONDS: float = float(os.getenv("VOICE_ANALYSIS_INTERVAL_SECONDS", "5.0"))
 
     # Neural Deepfake Voice Detector Settings (Wav2Vec2)
     VOICE_MODEL_PATH: str = os.getenv("VOICE_MODEL_PATH", "model/best_model_fold4.pth")
@@ -49,5 +49,4 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-
 
