@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 from app.config import settings
 from app.routers import analysis, auth, community, guardian_alerts, voice
+from app.services.autonomous_memory_scanner import autonomous_memory_scan_loop
 from app.utils.pipeline import get_pipeline
 
 
@@ -38,7 +40,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"  [ERROR] Failed to preload voice model: {e}")
     logger.info("=" * 70)
-    yield
+    scanner_task = None
+    if settings.AUTONOMOUS_MEMORY_ENABLED:
+        scanner_task = asyncio.create_task(
+            autonomous_memory_scan_loop(),
+            name="autonomous-scam-memory",
+        )
+    try:
+        yield
+    finally:
+        if scanner_task is not None:
+            scanner_task.cancel()
+            await asyncio.gather(scanner_task, return_exceptions=True)
 
 
 app = FastAPI(
@@ -112,5 +125,3 @@ handler = Mangum(sio_app)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8000, reload=True)
-
-

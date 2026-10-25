@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     VERIFY_WHEN_SEVERE: bool = os.getenv("VERIFY_WHEN_SEVERE", "false").lower() in ("true", "1", "yes")
     CACHE_TTL_S: int = int(os.getenv("CACHE_TTL_S", "900"))
     MEMORY_EMBEDDING_MODEL_PATH: str = os.getenv("MEMORY_EMBEDDING_MODEL_PATH", "")
+    AUTONOMOUS_MEMORY_ENABLED: bool = os.getenv(
+        "AUTONOMOUS_MEMORY_ENABLED", "true"
+    ).lower() in ("true", "1", "yes")
+    AUTONOMOUS_MEMORY_INTERVAL_SECONDS: int = int(
+        os.getenv("AUTONOMOUS_MEMORY_INTERVAL_SECONDS", "21600")
+    )
+    AUTONOMOUS_MEMORY_TIMEOUT_S: float = float(
+        os.getenv("AUTONOMOUS_MEMORY_TIMEOUT_S", "30")
+    )
     OFFICIAL_DOMAINS: str = os.getenv(
         "OFFICIAL_DOMAINS",
         "rbi.org.in,cybercrime.gov.in,pib.gov.in,sancharsaathi.gov.in,trai.gov.in,npci.org.in,cert-in.org.in,bank.sbi,sbi.co.in,hdfcbank.com,icicibank.com",
