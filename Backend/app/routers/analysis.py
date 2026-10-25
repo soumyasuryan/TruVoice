@@ -12,6 +12,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.database import get_supabase
 from app.schemas import AudioAnalysisResponse, AudioBase64Request
 from app.services.guardian_alert_service import SevereWindowGate, dispatch_guardian_alert
+from app.services.memory_routing_workflow import (
+    get_call_memory_risk_floor,
+    route_call_claim,
+)
 from app.utils.auth import get_current_user_id
 from app.utils.pipeline import get_pipeline
 from app.utils.websocket_manager import manager
@@ -23,6 +27,7 @@ _call_alert_gates: dict[str, SevereWindowGate] = {}
 _guardian_alert_tasks: set[asyncio.Task] = set()
 _call_analysis_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 _MAX_CALL_ANALYSIS_LOCKS = 256
+_memory_routing_tasks: set[asyncio.Task] = set()
 
 
 def _get_call_analysis_lock(call_id: str) -> asyncio.Lock:
@@ -206,6 +211,24 @@ async def analyze_base64_audio(
             payload.call_id or "non-live",
             time.perf_counter() - request_started_at,
         )
+        if payload.call_id:
+            memory_floor = get_call_memory_risk_floor(payload.call_id)
+            if memory_floor:
+                result["unified_risk_score"] = max(
+                    float(result.get("unified_risk_score", 0.0)),
+                    float(memory_floor["score"]),
+                )
+                risk_ranks = {"SAFE": 0, "MODERATE": 1, "SEVERE": 2}
+                current_level = str(result.get("risk_level", "SAFE")).upper()
+                floor_level = str(memory_floor["level"]).upper()
+                if risk_ranks.get(floor_level, 0) > risk_ranks.get(current_level, 0):
+                    result["risk_level"] = floor_level
+                    result["threat_type"] = "VERIFIED_SCAM_PATTERN"
+                    result["ui_alert"] = "Caution: this claim matches a verified scam pattern."
+                result["trust_score"] = round(
+                    max(0.0, 100.0 - result["unified_risk_score"]),
+                    2,
+                )
         _save_analysis_history(user_id, caller_num, result)
 
         if payload.call_id:
@@ -294,6 +317,34 @@ async def analyze_base64_audio(
             await loop.run_in_executor(
                 None, _update_voice_call_record, payload.call_id, update_payload
             )
+
+            sanitized_transcript = result.get("normalized_transcript") or result.get(
+                "transcript", ""
+            )
+            if sanitized_transcript:
+                memory_task = asyncio.create_task(
+                    route_call_claim(
+                        call_id=payload.call_id,
+                        sanitized_transcript=sanitized_transcript,
+                        base_score=unified_risk,
+                        base_level=risk_level,
+                    )
+                )
+                _memory_routing_tasks.add(memory_task)
+
+                def log_memory_task_error(completed_task: asyncio.Task) -> None:
+                    _memory_routing_tasks.discard(completed_task)
+                    if completed_task.cancelled():
+                        return
+                    try:
+                        completed_task.result()
+                    except Exception:
+                        logger.exception(
+                            "Memory routing background task failed for call %s",
+                            payload.call_id,
+                        )
+
+                memory_task.add_done_callback(log_memory_task_error)
 
         return result
     except HTTPException:
