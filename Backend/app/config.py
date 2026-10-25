@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     CLAIM_MIN_GAP_S: float = float(os.getenv("CLAIM_MIN_GAP_S", "8"))
     VERIFY_WHEN_SEVERE: bool = os.getenv("VERIFY_WHEN_SEVERE", "false").lower() in ("true", "1", "yes")
     CACHE_TTL_S: int = int(os.getenv("CACHE_TTL_S", "900"))
+    MEMORY_EMBEDDING_MODEL_PATH: str = os.getenv("MEMORY_EMBEDDING_MODEL_PATH", "")
     OFFICIAL_DOMAINS: str = os.getenv(
         "OFFICIAL_DOMAINS",
         "rbi.org.in,cybercrime.gov.in,pib.gov.in,sancharsaathi.gov.in,trai.gov.in,npci.org.in,cert-in.org.in,bank.sbi,sbi.co.in,hdfcbank.com,icicibank.com",
