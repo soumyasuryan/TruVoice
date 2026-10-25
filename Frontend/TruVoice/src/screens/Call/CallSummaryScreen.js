@@ -312,7 +312,7 @@ export default function CallSummaryScreen({ navigation, route }) {
               </View>
 
               <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>VOICE AUTH.</Text>
+                <Text style={styles.metricLabel}>AI PROB.</Text>
                 <Text
                   numberOfLines={1}
                   adjustsFontSizeToFit
@@ -340,7 +340,7 @@ export default function CallSummaryScreen({ navigation, route }) {
               </View>
 
               <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>VOICE AUTH.</Text>
+                <Text style={styles.metricLabel}>AI PROB.</Text>
                 <Text style={[styles.metricValue, { color: colors.textMuted }]}>
                   {isSavedContact ? 'N/A' : '--'}
                 </Text>

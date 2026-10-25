@@ -598,7 +598,7 @@ export default function ActiveCallScreen({ navigation, route }) {
                     </View>
                     <View style={styles.analysisRow}>
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
-                        Voice authenticity
+                        AI Probability
                       </Text>
                       <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getVoiceAuthenticityColor(displayedAuthenticity) }]}>
                         {hasAnalysis || demoScores
