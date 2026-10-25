@@ -42,7 +42,11 @@ import { useCallStore } from '../../store/callStore';
 import { useVoiceAnalysis } from '../../hooks/useVoiceAnalysis';
 import { agoraService } from '../../services/agora/agoraService';
 import { api } from '../../services/api/client';
-import { getRiskScoreColor, getVoiceAuthenticityColor } from '../../utils/scoreColors';
+import {
+  getAiProbabilityColor,
+  getRiskScoreColor,
+  getVoiceAuthenticityColor,
+} from '../../utils/scoreColors';
 import { getHumanVoiceProbability } from '../../utils/analysisMapper';
 import { useSettingsStore } from '../../store/settingsStore';
 const ENABLE_AI_ANALYSIS = true;
@@ -473,14 +477,14 @@ export default function ActiveCallScreen({ navigation, route }) {
   const getBubbleColor = () => {
     if (analysisStopped) return '#71717A';
     if (!hasAnalysis && !demoScores) return colors.textMuted;
-    return getRiskScoreColor(displayedAiProbability);
+    return getAiProbabilityColor(displayedAiProbability);
   };
 
   const getBubbleIcon = () => {
     if (analysisStopped) return 'pause-circle';
     if (!hasAnalysis && !demoScores) return 'hourglass-outline';
-    if (getRiskScoreColor(displayedAiProbability) === colors.danger) return 'warning';
-    if (getRiskScoreColor(displayedAiProbability) === colors.warning) return 'alert-circle';
+    if (getAiProbabilityColor(displayedAiProbability) === colors.danger) return 'warning';
+    if (getAiProbabilityColor(displayedAiProbability) === colors.warning) return 'alert-circle';
     return 'shield-checkmark';
   };
 
@@ -598,7 +602,7 @@ export default function ActiveCallScreen({ navigation, route }) {
                     </View>
                     <View style={styles.analysisRow}>
                       <Text style={[styles.analysisLabel, elderlyModeEnabled && styles.elderlyAnalysisLabel]}>
-                        AI Probability
+                        Voice Authenticity
                       </Text>
                       <Text style={[styles.analysisValue, elderlyModeEnabled && styles.elderlyAnalysisValue, { color: getVoiceAuthenticityColor(displayedAuthenticity) }]}>
                         {hasAnalysis || demoScores

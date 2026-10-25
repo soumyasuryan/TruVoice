@@ -103,12 +103,14 @@ async def analyze_base64_audio(
     temp_dir = tempfile.mkdtemp()
     temp_filename = f"agora_chunk_{int(time.time() * 1000)}.wav"
     temp_path = os.path.join(temp_dir, temp_filename)
+    failure_stage = "writing_audio"
 
     try:
         with open(temp_path, "wb") as f:
             f.write(audio_bytes)
 
         loop = asyncio.get_running_loop()
+        failure_stage = "initializing_pipeline"
         pipeline = get_pipeline()
 
         def emit_partial_transcript(
@@ -185,6 +187,8 @@ async def analyze_base64_audio(
 
             future.add_done_callback(log_emit_error)
 
+        failure_stage = "running_pipeline"
+
         async def run_pipeline():
             if not payload.call_id:
                 return await loop.run_in_executor(
@@ -211,6 +215,7 @@ async def analyze_base64_audio(
             payload.call_id or "non-live",
             time.perf_counter() - request_started_at,
         )
+        failure_stage = "applying_memory_risk_floor"
         if payload.call_id:
             memory_floor = get_call_memory_risk_floor(payload.call_id)
             if memory_floor:
@@ -229,9 +234,11 @@ async def analyze_base64_audio(
                     max(0.0, 100.0 - result["unified_risk_score"]),
                     2,
                 )
+        failure_stage = "saving_analysis_history"
         _save_analysis_history(user_id, caller_num, result)
 
         if payload.call_id:
+            failure_stage = "broadcasting_analysis_update"
             risk_level = result.get("risk_level", "SAFE")
             trust_score = result.get(
                 "trust_score",
@@ -314,6 +321,7 @@ async def analyze_base64_audio(
                 _guardian_alert_tasks.add(task)
                 task.add_done_callback(_guardian_alert_tasks.discard)
 
+            failure_stage = "updating_voice_call_record"
             await loop.run_in_executor(
                 None, _update_voice_call_record, payload.call_id, update_payload
             )
@@ -322,6 +330,7 @@ async def analyze_base64_audio(
                 "transcript", ""
             )
             if sanitized_transcript:
+                failure_stage = "scheduling_memory_routing"
                 memory_task = asyncio.create_task(
                     route_call_claim(
                         call_id=payload.call_id,
@@ -350,6 +359,11 @@ async def analyze_base64_audio(
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception(
+            "Base64 audio analysis failed during %s for call_id=%s",
+            failure_stage,
+            payload.call_id or "non-live",
+        )
         raise HTTPException(status_code=500, detail=f"Base64 pipeline execution error: {str(exc)}") from exc
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

@@ -7,6 +7,8 @@ export const getRiskScoreColor = (score) => {
   return colors.success;
 };
 
+export const getAiProbabilityColor = getRiskScoreColor;
+
 export const getCallRiskColor = (riskLevel, score) => {
   const normalizedLevel = String(riskLevel || '').toLowerCase();
   const normalizedScore = Number(score) || 0;

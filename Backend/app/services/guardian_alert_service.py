@@ -171,7 +171,7 @@ def build_alert_bodies(
         f"Risk level: {fields['risk_level']}",
         f"Unified risk score: {fields['unified_risk_score']}/100",
         f"Scam intent score: {fields['scam_intent_score']}/100",
-        f"Voice authenticity score: {fields['voice_authenticity_score']}/100",
+        f"AI Probability score: {fields['voice_authenticity_score']}/100",
         f"Scam category: {fields['scam_category']}",
         f"Caller claims: {fields['caller_claims']}",
     )
