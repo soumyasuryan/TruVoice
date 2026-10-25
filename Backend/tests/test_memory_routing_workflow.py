@@ -1,8 +1,10 @@
+import asyncio
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
@@ -51,7 +53,9 @@ class MemoryRoutingWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.events.append((call_id, event, payload))
 
     async def test_known_pattern_reuses_memory_without_tinyfish(self):
-        memory = FakeMemoryService([verified_hit()])
+        hit = verified_hit()
+        hit["source_urls"] = ["https://bank.example/guide?token=private"]
+        memory = FakeMemoryService([hit])
 
         async def never_verify(**_kwargs):
             self.fail("Known verified memory must not trigger TinyFish")
@@ -71,6 +75,11 @@ class MemoryRoutingWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "verified_memory_reused")
         self.assertGreaterEqual(result["final_score"], 60)
         self.assertIn(("call-known", "memory_update", unittest.mock.ANY), self.events)
+        memory_event = next(payload for _, event, payload in self.events if event == "memory_update")
+        self.assertEqual(memory_event["sources"], [
+            {"title": "bank.example", "url": "https://bank.example"}
+        ])
+        self.assertNotIn("private", str(memory_event))
         self.assertTrue(any(event == "risk_update" for _, event, _ in self.events))
 
     async def test_exact_verified_lexical_match_reuses_without_tinyfish(self):
@@ -232,6 +241,29 @@ class MemoryRoutingWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(first["final_score"], 20)
         self.assertGreaterEqual(second["final_score"], first["final_score"])
         self.assertEqual(first["final_level"], second["final_level"])
+
+    def test_persisted_risk_update_uses_atomic_monotonic_database_rpc(self):
+        client = unittest.mock.Mock()
+        call_id = str(uuid4())
+        with patch(
+            "app.services.memory_routing_workflow.get_supabase",
+            return_value=client,
+        ):
+            MemoryRoutingWorkflow._persist_call_risk({
+                "call_id": call_id,
+                "final_level": "SEVERE",
+                "final_score": 90,
+            })
+
+        client.rpc.assert_called_once_with(
+            "raise_voice_call_risk",
+            {
+                "p_call_id": call_id,
+                "p_risk_level": "SEVERE",
+                "p_risk_score": 90,
+            },
+        )
+        client.rpc.return_value.execute.assert_called_once_with()
 
     async def test_call_verification_budget_skips_tinyfish(self):
         memory = FakeMemoryService()

@@ -12,10 +12,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, TypedDict
 from urllib.parse import urlsplit, urlunsplit
+from uuid import UUID
 
 from langgraph.graph import END, StateGraph
 
 from app.config import settings
+from app.database import get_supabase
 from app.services.scam_memory_service import ScamMemoryService, normalize_claim
 from app.services.web_verification_service import (
     CLAIM_PATTERNS,
@@ -642,20 +644,49 @@ class MemoryRoutingWorkflow:
     async def _emit_update(self, state: RoutingState) -> dict[str, Any]:
         if not state.get("emit", True):
             return {}
+        selected_memory = state.get("selected_memory") or {}
+        verification = state.get("verification") or {}
+        if state.get("memory_status") == "verified_memory_reused":
+            reason = "This claim matches a recently verified scam pattern."
+            source_values = selected_memory.get("source_urls") or []
+        elif state.get("verification_valid"):
+            reason = scrub_pii(str(verification.get("reason", "")))[:300]
+            source_values = self._compact_evidence(verification)["sources"]
+        else:
+            reason = {
+                "verification_unconfirmed": "No validated evidence was found for this claim.",
+                "verification_failed_open": "Memory verification was unavailable; the call score is unchanged.",
+                "verification_disabled_or_call_budget_exhausted": (
+                    "No verified memory match was found; live verification was skipped by the call budget."
+                ),
+                "question_unavailable_for_verification": (
+                    "No verified memory match was found; a safe verification query was unavailable."
+                ),
+            }.get(
+                state.get("memory_status", ""),
+                "No verified scam-memory match was found.",
+            )
+            source_values = []
+
+        sources = self._display_sources(source_values)
         event = {
             "call_id": state["call_id"],
             "status": state.get("memory_status", "no_memory_match"),
             "claim_type": state["claim_type"],
+            "origin": "memory",
+            "verdict": "CONTRADICTED" if state.get("risk_evidence") else "UNCLEAR",
+            "reason": reason,
+            "sources": sources,
             "matched_pattern": (
-                state.get("selected_memory", {}).get("canonical_key")
-                if state.get("selected_memory")
+                selected_memory.get("canonical_key")
+                if selected_memory
                 else None
             ),
             "confidence": (
-                state.get("selected_memory", {}).get("confidence")
-                if state.get("selected_memory")
+                selected_memory.get("confidence")
+                if selected_memory
                 else (
-                    state.get("verification", {}).get("confidence")
+                    verification.get("confidence")
                     if state.get("verification_valid")
                     else None
                 )
@@ -664,19 +695,82 @@ class MemoryRoutingWorkflow:
         }
         try:
             await self.emit_function(state["call_id"], "memory_update", event)
-            risk_update = state.get("risk_update", {})
-            if (
-                risk_update
-                and (
-                    risk_update["final_score"] > risk_update["base_score"]
-                    or self._level_rank(risk_update["final_level"])
-                    > self._level_rank(risk_update["base_level"])
-                )
-            ):
-                await self.emit_function(state["call_id"], "risk_update", risk_update)
         except Exception:
-            logger.exception("Unable to emit memory routing update for call %s", state["call_id"])
+            logger.exception("Unable to emit memory status for call %s", state["call_id"])
+
+        risk_update = state.get("risk_update", {})
+        if (
+            risk_update
+            and (
+                risk_update["final_score"] > risk_update["base_score"]
+                or self._level_rank(risk_update["final_level"])
+                > self._level_rank(risk_update["base_level"])
+            )
+        ):
+            try:
+                await self.emit_function(state["call_id"], "risk_update", risk_update)
+            except Exception:
+                logger.exception("Unable to emit memory risk update for call %s", state["call_id"])
+            persistence_task = asyncio.create_task(
+                _run_memory_job(self._persist_call_risk, risk_update)
+            )
+            self._persistence_tasks.add(persistence_task)
+            persistence_task.add_done_callback(
+                lambda task: self._log_background_persistence(
+                    task,
+                    state["call_id"],
+                    "Memory risk update",
+                )
+            )
         return {}
+
+    @staticmethod
+    def _display_sources(values: Any) -> list[dict[str, str]]:
+        if not isinstance(values, list):
+            return []
+        sources = []
+        for item in values[:3]:
+            raw_url = item.get("url") if isinstance(item, dict) else item
+            try:
+                parsed = urlsplit(str(raw_url))
+                if parsed.scheme.lower() != "https" or not parsed.hostname:
+                    continue
+                hostname = parsed.hostname.encode("idna").decode("ascii").lower()
+                sources.append({"title": hostname, "url": f"https://{hostname}"})
+            except (UnicodeError, ValueError):
+                continue
+        return sources
+
+    @staticmethod
+    def _persist_call_risk(risk_update: dict[str, Any]) -> None:
+        call_id = str(risk_update["call_id"])
+        try:
+            UUID(call_id)
+        except ValueError:
+            logger.warning("Skipping call risk persistence for invalid call ID")
+            return
+        get_supabase().rpc(
+            "raise_voice_call_risk",
+            {
+                "p_call_id": call_id,
+                "p_risk_level": risk_update["final_level"],
+                "p_risk_score": risk_update["final_score"],
+            },
+        ).execute()
+
+    def _log_background_persistence(
+        self,
+        task: asyncio.Task,
+        call_id: str,
+        operation: str,
+    ) -> None:
+        self._persistence_tasks.discard(task)
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            logger.exception("%s failed for call %s", operation, call_id)
 
     @staticmethod
     def _normalize_level(level: str, score: float) -> str:

@@ -682,8 +682,14 @@ export default function ActiveCallScreen({ navigation, route }) {
                       <View style={[
                         styles.uiAlertBanner,
                         {
-                          backgroundColor: webEvidence.verdict === 'CONTRADICTED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                          borderColor: webEvidence.verdict === 'CONTRADICTED' ? '#EF4444' : '#22C55E',
+                          backgroundColor: webEvidence.verdict === 'CONTRADICTED'
+                            ? 'rgba(239, 68, 68, 0.15)'
+                            : webEvidence.verdict === 'UNCLEAR'
+                              ? 'rgba(59, 130, 246, 0.15)'
+                              : 'rgba(34, 197, 94, 0.15)',
+                          borderColor: webEvidence.verdict === 'CONTRADICTED'
+                            ? '#EF4444'
+                            : webEvidence.verdict === 'UNCLEAR' ? '#3B82F6' : '#22C55E',
                           flexDirection: 'column',
                           alignItems: 'flex-start',
                           marginTop: 8,
@@ -691,17 +697,25 @@ export default function ActiveCallScreen({ navigation, route }) {
                       ]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                           <Ionicons
-                            name={webEvidence.verdict === 'CONTRADICTED' ? 'warning-outline' : 'checkmark-circle-outline'}
+                            name={webEvidence.verdict === 'CONTRADICTED'
+                              ? 'warning-outline'
+                              : webEvidence.verdict === 'UNCLEAR' ? 'help-circle-outline' : 'checkmark-circle-outline'}
                             size={16}
-                            color={webEvidence.verdict === 'CONTRADICTED' ? '#EF4444' : '#22C55E'}
+                            color={webEvidence.verdict === 'CONTRADICTED'
+                              ? '#EF4444'
+                              : webEvidence.verdict === 'UNCLEAR' ? '#60A5FA' : '#22C55E'}
                             style={{ marginRight: 6 }}
                           />
                           <Text style={{
-                            color: webEvidence.verdict === 'CONTRADICTED' ? '#FCA5A5' : '#86EFAC',
+                            color: webEvidence.verdict === 'CONTRADICTED'
+                              ? '#FCA5A5'
+                              : webEvidence.verdict === 'UNCLEAR' ? '#93C5FD' : '#86EFAC',
                             fontWeight: '700',
                             fontSize: 12,
                           }}>
-                            Web Second Opinion: {webEvidence.verdict}
+                            {webEvidence.origin === 'memory'
+                              ? `Scam Memory: ${webEvidence.verdict}`
+                              : `Web Second Opinion: ${webEvidence.verdict}`}
                           </Text>
                         </View>
                         <Text style={{ color: '#E4E4E7', fontSize: 11, marginBottom: 2 }}>

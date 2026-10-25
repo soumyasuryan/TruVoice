@@ -91,6 +91,14 @@ export function useVoiceAnalysis(callId, onAnalysisUpdate) {
             }
           } else if (data.type === 'web_evidence_pending' || data.event === 'web_evidence_pending') {
             setPendingWebEvidence(data);
+          } else if (data.type === 'memory_update' || data.event === 'memory_update') {
+            setWebEvidence({
+              ...data,
+              origin: 'memory',
+              verdict: data.verdict || 'UNCLEAR',
+              reason: data.reason || 'No verified scam-memory match was found.',
+              sources: data.sources || [],
+            });
           } else if (data.type === 'web_evidence' || data.event === 'web_evidence') {
             setWebEvidence(data);
           } else if (data.type === 'risk_update' || data.event === 'risk_update') {
