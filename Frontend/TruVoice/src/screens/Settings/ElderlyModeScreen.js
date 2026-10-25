@@ -148,6 +148,9 @@ export default function ElderlyModeScreen({ navigation }) {
                     only after two consecutive severe analysis windows.
                   </Text>
                 </View>
+              </View>
+              <View style={styles.modeToggleRow}>
+                <Text style={styles.modeToggleLabel}>Use larger text and spoken alerts</Text>
                 <Switch
                   accessibilityLabel="Elderly mode"
                   accessibilityRole="switch"
@@ -254,28 +257,37 @@ export default function ElderlyModeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#09090B' },
-  container: { flex: 1, backgroundColor: '#09090B', paddingHorizontal: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
+  container: { flex: 1, backgroundColor: '#09090B', paddingHorizontal: 22 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 18 },
   backButton: { padding: 8, marginLeft: -8, marginRight: 10 },
   title: { color: '#FFFFFF', fontSize: 25, fontWeight: '700' },
-  content: { paddingBottom: 24, gap: 16 },
+  content: { paddingBottom: 32, gap: 20 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   card: {
     backgroundColor: '#131316',
     borderRadius: 20,
     borderColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    padding: 18,
+    padding: 22,
   },
-  modeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modeCopy: { flex: 1, paddingRight: 12 },
-  sectionTitle: { color: '#FFFFFF', fontSize: 19, fontWeight: '700', marginBottom: 8 },
-  description: { color: '#A1A1AA', fontSize: 15, lineHeight: 22 },
+  modeHeader: { marginBottom: 18 },
+  modeCopy: { flex: 1 },
+  sectionTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 10 },
+  description: { color: '#A1A1AA', fontSize: 16, lineHeight: 25 },
+  modeToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopWidth: 1,
+    paddingTop: 16,
+  },
+  modeToggleLabel: { flex: 1, color: '#E4E4E7', fontSize: 16, lineHeight: 24, paddingRight: 12 },
   inlineLoader: { marginTop: 12, alignSelf: 'flex-start' },
-  inputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18, gap: 10 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 22, gap: 12 },
   input: {
     flex: 1,
-    height: 50,
+    height: 56,
     color: '#FFFFFF',
     backgroundColor: '#09090B',
     borderColor: 'rgba(255,255,255,0.12)',
@@ -285,30 +297,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   addButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2563EB',
   },
   disabledButton: { opacity: 0.5 },
-  countText: { color: '#A1A1AA', fontSize: 13, marginTop: 10 },
-  emptyText: { color: '#A1A1AA', fontSize: 15, marginTop: 20, textAlign: 'center' },
+  countText: { color: '#A1A1AA', fontSize: 14, marginTop: 12 },
+  emptyText: { color: '#A1A1AA', fontSize: 16, lineHeight: 24, marginTop: 22, textAlign: 'center' },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderTopColor: 'rgba(255,255,255,0.08)',
     borderTopWidth: 1,
-    paddingTop: 14,
-    marginTop: 14,
+    paddingTop: 18,
+    marginTop: 18,
   },
   contactCopy: { flex: 1, paddingRight: 10 },
-  contactEmail: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  contactStatus: { fontSize: 14, marginTop: 5 },
+  contactEmail: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', lineHeight: 24 },
+  contactStatus: { fontSize: 15, marginTop: 6 },
   verified: { color: '#4ADE80' },
   pending: { color: '#FBBF24' },
-  removeButton: { padding: 10 },
+  removeButton: { padding: 12 },
   errorBox: {
     backgroundColor: 'rgba(239,68,68,0.12)',
     borderColor: 'rgba(239,68,68,0.35)',

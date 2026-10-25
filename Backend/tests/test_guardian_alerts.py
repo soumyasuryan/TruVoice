@@ -298,6 +298,21 @@ class TestGuardianAlertDispatch(unittest.IsolatedAsyncioTestCase):
             "transcript": "Never send the raw transcript to the guardian email generator.",
         }
 
+    def test_guardian_email_uses_active_call_voice_authenticity_score(self):
+        fields = service.build_sanitized_alert_fields({
+            **self.analysis,
+            "ai_voice_probability": 81.5,
+        })
+        text_body, _ = service.build_alert_bodies(
+            "A severe scam risk was detected.",
+            fields,
+            "https://example.com/unsubscribe",
+        )
+
+        self.assertEqual(fields["voice_authenticity_score"], 19)
+        self.assertIn("Voice authenticity score: 19/100", text_body)
+        self.assertNotIn("AI voice probability:", text_body)
+
     async def test_moderate_mode_off_and_unverified_contacts_send_nothing(self):
         await service.dispatch_guardian_alert("call-1", {**self.analysis, "risk_level": "MODERATE"})
         self.db.tables["users"][0]["elderly_mode_enabled"] = False

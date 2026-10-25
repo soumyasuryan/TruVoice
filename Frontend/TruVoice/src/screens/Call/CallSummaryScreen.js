@@ -16,12 +16,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { ROUTES } from '../../constants/routes';
-import { getHumanVoiceProbability, normalizeAnalysis } from '../../utils/analysisMapper';
+import { normalizeAnalysis } from '../../utils/analysisMapper';
 import { colors } from '../../theme';
 import {
   getRiskScoreBackground,
   getRiskScoreColor,
-  getVoiceAuthenticityColor,
   getVoiceClassificationColor,
 } from '../../utils/scoreColors';
 import { showAlert } from '../../store/alertStore';
@@ -68,12 +67,6 @@ export default function CallSummaryScreen({ navigation, route }) {
   );
 
   const aiProbability = averagedAnalysis?.aiProbability ?? pickEither(analysis, 'aiProbability', 'ai_voice_probability', 0);
-  const humanVoiceProbability = getHumanVoiceProbability(aiProbability);
-  const voiceAuthenticityCategory = useMemo(() => {
-    if (humanVoiceProbability < 50) return { label: 'Poor', color: getVoiceAuthenticityColor(humanVoiceProbability) };
-    if (humanVoiceProbability < 80) return { label: 'Medium', color: getVoiceAuthenticityColor(humanVoiceProbability) };
-    return { label: 'Good', color: getVoiceAuthenticityColor(humanVoiceProbability) };
-  }, [humanVoiceProbability]);
   const authenticityScore = pickEither(
     analysis,
     'authenticityScore',
@@ -137,11 +130,10 @@ export default function CallSummaryScreen({ navigation, route }) {
   const badgeLabel = () => {
     if (isSavedContact) return { label: 'Saved contact', color: '#22C55E' };
     if (!hasAnalysis) return { label: 'No analysis', color: colors.textMuted };
-    if (aiProbability > 60) return { label: 'Synthetic voice', color: getVoiceClassificationColor('synthetic voice') };
-    if (aiProbability > 30 || unifiedRiskScore > 50) {
-      return { label: 'Suspicious', color: getVoiceClassificationColor('suspicious') };
+    if (aiProbability > 70) {
+      return { label: 'Synthetic voice', color: getVoiceClassificationColor('synthetic voice') };
     }
-    return { label: 'Verified human', color: getVoiceClassificationColor('verified human') };
+    return { label: 'Human voice', color: getVoiceClassificationColor('verified human') };
   };
 
   const badge = badgeLabel();
@@ -312,18 +304,6 @@ export default function CallSummaryScreen({ navigation, route }) {
               </View>
 
               <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>AI PROB.</Text>
-                <Text
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  style={[styles.metricValue, styles.aiProbabilityValue, { color: voiceAuthenticityCategory.color }]}
-                >
-                  {voiceAuthenticityCategory.label}
-                </Text>
-                <Text style={styles.metricSubvalue}>{`${humanVoiceProbability}%`}</Text>
-              </View>
-
-              <View style={styles.metricCard}>
                 <Text style={styles.metricLabel}>RISK</Text>
                 <Text style={[styles.metricValue, { color: riskColor() }]}>
                   {`${unifiedRiskScore}%`}
@@ -334,13 +314,6 @@ export default function CallSummaryScreen({ navigation, route }) {
             <View style={[styles.metricsRow, { opacity: 0.6 }]}>
               <View style={styles.metricCard}>
                 <Text style={styles.metricLabel}>SCAM INTENT</Text>
-                <Text style={[styles.metricValue, { color: colors.textMuted }]}>
-                  {isSavedContact ? 'N/A' : '--'}
-                </Text>
-              </View>
-
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>AI PROB.</Text>
                 <Text style={[styles.metricValue, { color: colors.textMuted }]}>
                   {isSavedContact ? 'N/A' : '--'}
                 </Text>
@@ -614,16 +587,6 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '800',
     marginTop: 6,
-  },
-  metricSubvalue: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  aiProbabilityValue: {
-    fontSize: 20,
-    flexShrink: 1,
   },
   riskLevelRow: {
     flexDirection: 'row',

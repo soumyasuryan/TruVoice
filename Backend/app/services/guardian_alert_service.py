@@ -82,11 +82,14 @@ def _safe_score(value: Any) -> float:
 def build_sanitized_alert_fields(analysis: dict[str, Any]) -> dict[str, Any]:
     raw_keywords = analysis.get("flagged_keywords")
     keywords = raw_keywords if isinstance(raw_keywords, (list, tuple)) else []
+    voice_authenticity_score = math.floor(
+        100.0 - _safe_score(analysis.get("ai_voice_probability")) + 0.5
+    )
     return {
         "risk_level": "SEVERE",
         "unified_risk_score": _safe_score(analysis.get("unified_risk_score")),
         "scam_intent_score": _safe_score(analysis.get("scam_intent_score")),
-        "ai_voice_probability": _safe_score(analysis.get("ai_voice_probability")),
+        "voice_authenticity_score": voice_authenticity_score,
         "scam_category": _safe_label(analysis.get("scam_category"), "Possible scam"),
         "threat_type": _safe_label(analysis.get("threat_type"), "Suspicious call"),
         "flagged_keywords": [
@@ -168,7 +171,7 @@ def build_alert_bodies(
         f"Risk level: {fields['risk_level']}",
         f"Unified risk score: {fields['unified_risk_score']}/100",
         f"Scam intent score: {fields['scam_intent_score']}/100",
-        f"AI voice probability: {fields['ai_voice_probability']}/100",
+        f"Voice authenticity score: {fields['voice_authenticity_score']}/100",
         f"Scam category: {fields['scam_category']}",
         f"Caller claims: {fields['caller_claims']}",
     )
