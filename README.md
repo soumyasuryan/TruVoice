@@ -12,11 +12,6 @@ analysis, speech transcription, scam-intent signals, live risk updates, and
 evidence-based web verification. A backend-only scam-memory system supports
 both on-call verification and scheduled ingestion of public scam advisories.
 
-The main branch contains the in-call memory workflow. The autonomous scheduled
-scanner described below is implemented on the `autonomous` branch; its scanner
-module, configuration, and third database migration must be taken from that
-branch before enabling it.
-
 ## Contents
 
 - [Product capabilities](#product-capabilities)
@@ -54,109 +49,135 @@ branch before enabling it.
 
 ## System architecture
 
-```text
-Expo / React Native application
-  ├─ Agora voice calls and local audio chunking
-  ├─ REST calls for auth, call lifecycle, and audio analysis
-  └─ WebSocket / Socket.IO events for transcript and risk updates
-                 │
-                 ▼
-FastAPI backend
-  ├─ Local audio / transcription / scam-intent pipeline
-  ├─ Auth, call, community, and guardian APIs
-  ├─ In-call memory routing (background side path)
-  └─ Autonomous advisory scanner (background scheduled task)
-        ├─ TinyFish Search and Fetch
-        ├─ Groq structured evidence extraction/judgment
-        └─ Sanitized writes to Supabase scam-pattern memory
-                 │
-                 ▼
-Supabase PostgreSQL + pgvector
-  ├─ Canonical scam patterns, evidence references, and embeddings
-  └─ Scan lease and last-run statistics
+```mermaid
+flowchart LR
+    subgraph Client["Mobile client"]
+        App["Expo / React Native"]
+        Agora["Agora call audio"]
+        Events["WebSocket / Socket.IO"]
+        App --> Agora
+        Events --> App
+    end
+
+    subgraph API["FastAPI backend"]
+        Audio["Audio and transcript pipeline"]
+        Score["Scam intent + voice risk"]
+        CallMemory["In-call memory side path"]
+        Scanner["Autonomous advisory scanner"]
+        Verify["TinyFish Search / Fetch"]
+        Judge["Structured evidence judgment"]
+    end
+
+    subgraph Data["Supabase"]
+        Calls[("Call records")]
+        Memory[("Verified scam-pattern memory")]
+        ScanState[("Autonomous scan state")]
+    end
+
+    Agora --> Audio --> Score
+    Score --> Events
+    Score -. "background; does not delay first score" .-> CallMemory
+    CallMemory --> Memory
+    CallMemory --> Verify --> Judge --> Memory
+    Scanner --> ScanState
+    Scanner --> Verify
+    Verify --> Judge --> Memory
+    Score --> Calls
 ```
 
-The ordinary first-score response is produced before the in-call memory side
-path is scheduled. The autonomous scanner runs on a dedicated background worker
-and is not awaited by audio analysis requests.
+The live score is emitted before the in-call memory side path starts. The
+autonomous scanner is scheduled separately from audio analysis.
 
 ## Scam memory and TinyFish
 
-TruVoice has two ingestion paths that write to the same canonical
-`scam_pattern_memory` table.
+Two bounded ingestion paths feed the same canonical
+`scam_pattern_memory` table:
 
 ### In-call verification
 
-1. The live analysis route completes its normal scoring and emits the normal
-   analysis update.
-2. A background workflow examines sanitized transcript text for a bounded set
-   of configured claim types, including OTP requests, remote-access app
-   instructions, suspicious fee demands, credential requests, bank
-   impersonation, and digital-arrest/legal threats.
-3. The workflow retrieves a small set of fresh, verified patterns. Strong
-   matches are reused; new, weak, stale, or conflicting claims may require
-   verification. Repeated claims in the same call are deduplicated.
-4. For eligible uncertain claims, TinyFish Search finds candidate pages and
-   TinyFish Fetch extracts context from a small number of results. The existing
-   structured verdict step judges the evidence.
-5. Only a validated `CONTRADICTED` result with sufficient confidence and valid
-   HTTPS evidence is persisted. Writes happen asynchronously.
+```mermaid
+flowchart TD
+    Transcript["Sanitized call transcript"] --> Detect["Detect supported claim"]
+    Detect --> Dedupe{"Seen earlier in this call?"}
+    Dedupe -- Yes --> ReuseCall["Reuse prior result"]
+    Dedupe -- No --> Retrieve["Retrieve verified fresh patterns"]
+    Retrieve --> Match{"Strong, unambiguous match?"}
+    Match -- Yes --> Reuse["Reuse verified memory"]
+    Match -- No --> Budget{"Verification enabled and budget available?"}
+    Budget -- No --> FailOpen["Continue call flow; no new evidence"]
+    Budget -- Yes --> Search["TinyFish Search"]
+    Search --> Fetch["Fetch bounded result set"]
+    Fetch --> Judge["Structured evidence judgment"]
+    Judge --> Valid{"CONTRADICTED + confidence ≥ 0.80 + HTTPS source?"}
+    Valid -- Yes --> Persist["Sanitize and upsert pattern"]
+    Valid -- No --> NoWrite["Do not persist speculative pattern"]
+    Reuse --> Emit["Emit compact memory update"]
+    Persist --> Emit
+    FailOpen --> Emit
+```
+
+The current detector supports a bounded set of claims: OTP and credential
+requests, remote-access apps, suspicious fees, bank impersonation, and
+digital-arrest/legal threats. Weak, stale, conflicting, or absent matches may
+be verified, subject to the configured per-call limit and minimum interval.
 
 ### Autonomous public-advisory ingestion
 
-When enabled, the FastAPI lifespan starts a scanner that runs once at startup
-and then at a configurable interval (six hours by default). Each pass:
+The `autonomous` branch adds a scheduled scanner. Each pass is bounded to a few
+public-safety queries and at most three official pages:
 
-1. Runs a small, fixed set of public-safety queries through TinyFish Search.
-2. Selects HTTPS results whose hostnames match the configured official-domain
-   allowlist.
-3. Fetches at most three pages using TinyFish Fetch.
-4. Uses the configured Groq model to propose structured scam-pattern
-   candidates from those pages.
-5. Requires each accepted candidate to use a supported scam category, meet the
-   confidence threshold, and cite a scam-related quote that appears in the
-   fetched page.
-6. Passes only the compact pattern and evidence reference to the memory
-   service, which scrubs the data and upserts it by canonical key.
+```mermaid
+flowchart LR
+    Timer["Startup + configured interval"] --> Lease{"Database scan lease available?"}
+    Lease -- No --> Wait["Wait for next interval"]
+    Lease -- Yes --> Search["TinyFish Search"]
+    Search --> Allowlist["Keep HTTPS official-domain results"]
+    Allowlist --> Fetch["TinyFish Fetch: up to 3 pages"]
+    Fetch --> Extract["Groq: propose structured patterns"]
+    Extract --> Evidence{"Supported type, confidence ≥ 0.80, verbatim scam quote?"}
+    Evidence -- No --> Reject["Reject candidate"]
+    Evidence -- Yes --> Sanitize["Scrub and normalize"]
+    Sanitize --> Upsert["Canonical-key upsert"]
+    Upsert --> DB[("scam_pattern_memory")]
+    Reject --> Stats["Record scan outcome"]
+    Upsert --> Stats
+    Stats --> Wait
+    Wait -. "next scheduled run" .-> Timer
+```
 
 The scanner is a bounded advisory ingester, not a general-purpose agent. It
 does not crawl arbitrary websites, invent seed records, or watch the entire web.
-It requires a continuously running backend process; serverless environments
-that suspend FastAPI between requests need an external scheduled invocation.
+It requires a continuously running backend process; suspended serverless
+deployments need an external scheduler.
 
 ### Storage, retrieval, and privacy
 
-- Canonical keys deduplicate patterns. Repeated observations update
-  `occurrence_count` and `last_seen_at`.
-- Patterns include a summary, normalized/search text, scam category, tactics,
-  phrases, organizations, risk indicators, confidence, sources, evidence
-  references, and verification/freshness metadata.
-- Source URLs are stored without query strings or fragments; page contents are
-  not persisted as evidence.
-- Raw audio, raw call transcripts, OTPs, phone numbers, account numbers, and
-  national identity values are not accepted as memory fields. Inputs are
-  scrubbed before pattern storage and embedding.
-- Embeddings are generated locally only. No external embedding API is used.
-- When `MEMORY_EMBEDDING_MODEL_PATH` points to a local 384-dimensional
-  Transformers model, retrieval uses pgvector semantic search and lexical
-  fallback. Without it, patterns can still be stored and lexical retrieval is
-  used.
-- Retrieval defaults to verified, active, non-expired patterns with recent
-  verification.
-- Memory can raise the call risk but does not lower it.
+| Stored | Not stored |
+| --- | --- |
+| Sanitized canonical patterns, tactics, and risk indicators | Raw audio or call transcripts |
+| Verification status, confidence, occurrence and freshness metadata | OTPs, phone/account numbers, or national IDs |
+| Compact HTTPS source references and domains | Fetched page contents or URL query strings/fragments |
+| Optional local embedding vector | External embedding API data |
 
-TinyFish integration uses:
+Canonical keys deduplicate patterns; repeat observations refresh occurrence
+metadata. Retrieval filters for verified, active, fresh patterns. A local
+384-dimensional model enables pgvector semantic retrieval, with lexical
+fallback; without that model, lexical retrieval can still be used. Memory can
+raise risk but never lowers it.
 
-- Search: `GET https://api.search.tinyfish.ai?query=...`
-- Fetch: `POST https://api.fetch.tinyfish.ai` with a JSON request containing
-  URLs and `format: "markdown"`
+**TinyFish APIs**
 
-Both are authenticated using the backend `TINYFISH_API_KEY`. In-call checks
-also obey `TINYFISH_ENABLED`, `CLAIM_MAX_PER_CALL`, `CLAIM_MIN_GAP_S`, and
+| API | Request |
+| --- | --- |
+| Search | `GET https://api.search.tinyfish.ai?query=...` |
+| Fetch | `POST https://api.fetch.tinyfish.ai` with URLs and `format: "markdown"` |
+
+Both use the backend `TINYFISH_API_KEY`. In-call verification also respects
+`TINYFISH_ENABLED`, `CLAIM_MAX_PER_CALL`, `CLAIM_MIN_GAP_S`, and
 `WEB_EVIDENCE_TIMEOUT_S`.
 
-The autonomous branch includes `Backend/AUTONOMOUS_MEMORY.md` with additional
-scanner setup details and SQL inspection queries.
+For autonomous scanner configuration and SQL checks, see
+[`Backend/AUTONOMOUS_MEMORY.md`](./Backend/AUTONOMOUS_MEMORY.md).
 
 ## Technology stack
 
@@ -227,14 +248,12 @@ in this order:
    vector/lexical indexes, search functions, and service-role access.
 2. `Backend/migrations/002_monotonic_call_risk.sql` — atomic monotonic risk
    persistence for memory-driven risk updates.
-3. `Backend/migrations/003_autonomous_memory_scan.sql` from the `autonomous`
-   branch — autonomous scan lease and latest-run status/statistics. This
-   migration and scanner are not present on `main`.
+3. `Backend/migrations/003_autonomous_memory_scan.sql` — autonomous scan lease
+   and latest-run status/statistics.
 
 Creating these tables and functions does not itself populate scam memory. Rows
 are added only after an ingestion path finds evidence that passes validation.
-The scan-state query is available only on the `autonomous` branch after
-migration 003; the pattern query is available after migration 001:
+Use these queries to inspect the latest scanner run and stored patterns:
 
 ```sql
 select last_started_at, last_finished_at, last_status,
@@ -265,9 +284,9 @@ The backend loads `Backend/.env`; the mobile app loads
 | `TINYFISH_ENABLED` | Enables or disables TinyFish verification |
 | `OFFICIAL_DOMAINS` | Comma-separated source host allowlist |
 | `MEMORY_EMBEDDING_MODEL_PATH` | Optional local 384-dimensional embedding model |
-| `AUTONOMOUS_MEMORY_ENABLED` | Enables the scanner; defined on the `autonomous` branch |
-| `AUTONOMOUS_MEMORY_INTERVAL_SECONDS` | Scanner interval; `21600` seconds by default on `autonomous` |
-| `AUTONOMOUS_MEMORY_TIMEOUT_S` | Extraction timeout; defined on `autonomous` |
+| `AUTONOMOUS_MEMORY_ENABLED` | Enables the scheduled advisory scanner |
+| `AUTONOMOUS_MEMORY_INTERVAL_SECONDS` | Scan interval; default is `21600` seconds |
+| `AUTONOMOUS_MEMORY_TIMEOUT_S` | Structured extraction timeout |
 | `CLAIM_MAX_PER_CALL` | Maximum in-call checks per call |
 | `CLAIM_MIN_GAP_S` | Minimum spacing between in-call checks |
 | `WEB_EVIDENCE_TIMEOUT_S` | TinyFish Search/Fetch timeout |
@@ -325,7 +344,7 @@ python -m unittest discover -s tests -p "test_scam_memory.py" -v
 python -m unittest discover -s tests -p "test_memory_routing_workflow.py" -v
 ```
 
-The autonomous scanner test is available on the `autonomous` branch:
+Autonomous scanner tests:
 
 ```powershell
 python -m unittest discover -s tests -p "test_autonomous_memory_scanner.py" -v
@@ -333,11 +352,9 @@ python -m unittest discover -s tests -p "test_autonomous_memory_scanner.py" -v
 
 ## Operational notes and limitations
 
-- The autonomous scanner is not included on `main`; its settings, migration,
-  and worker are on the `autonomous` branch. When using that branch, the
-  scanner requires a long-running FastAPI process. The project also includes a
-  Mangum handler; serverless deployments should use an external scheduler
-  rather than relying on a lifespan task.
+- The autonomous scanner requires a long-running FastAPI process. The project
+  also includes a Mangum handler; serverless deployments should use an external
+  scheduler rather than relying on a lifespan task.
 - A scan can finish successfully with zero patterns stored. Search results may
   have no allowlisted pages, pages may contain no supported scam categories, or
   candidates may fail quote/confidence checks.
