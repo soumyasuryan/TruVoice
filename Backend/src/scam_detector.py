@@ -9,55 +9,20 @@ logger = logging.getLogger(__name__)
 class GroqScamDetector:
     def __init__(self, api_key: str = None):
         """
-        Initializes the Groq client for Speech-to-Text and Intent Detection.
+        Initializes the text-only scam-intent client.
         """
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
         if not self.api_key:
             raise ValueError("GROQ_API_KEY is required for GroqScamDetector.")
 
         self.client = Groq(api_key=self.api_key)
-        self.whisper_model = "whisper-large-v3-turbo"
         self.llm_model = "openai/gpt-oss-20b"
 
-    def _is_whisper_hallucination(self, text: str) -> bool:
-        if not text:
-            return True
-        cleaned = text.lower().strip().strip(".!?,")
-        hallucinations = {
-            "thank you",
-            "thank you for watching",
-            "thank you for listening",
-            "subtitles by amara.org",
-            "subtitles by",
-            "amara.org",
-            "mbc news",
-            "cbc news",
-            "like and subscribe",
-            "so",
-        }
-        return cleaned in hallucinations or len(cleaned) <= 1
-
-    def transcribe_audio(self, audio_path: str) -> str:
-        """
-        Transcribes audio using Groq Whisper API.
-        """
-        try:
-            with open(audio_path, "rb") as file:
-                transcription = self.client.audio.transcriptions.create(
-                    file=(os.path.basename(audio_path), file.read()),
-                    model=self.whisper_model,
-                    response_format="text",
-                    language="en",
-                )
-            raw_text = str(transcription).strip()
-            if self._is_whisper_hallucination(raw_text):
-                return ""
-            return raw_text
-        except Exception as e:
-            logger.warning(f"Error during audio transcription: {e}")
-            return ""
-
-    def analyze_scam_intent(self, transcript: str) -> dict:
+    def analyze_scam_intent(
+        self,
+        transcript: str,
+        transcript_confidence: float = 1.0,
+    ) -> dict:
         """
         Analyzes the transcript using supported Groq models to evaluate scam intent, category, and risk keywords.
         """
@@ -69,8 +34,13 @@ class GroqScamDetector:
                 "reasoning": "Audio clip too short or contains no recognizable speech.",
             }
 
+        confidence = min(1.0, max(0.0, float(transcript_confidence)))
         prompt = f"""
 You are an expert Cybersecurity AI system analyzing phone call transcripts for phishing, scams, and financial fraud.
+
+The local speech recognizer estimates transcript confidence at {confidence:.0%}. It can miss or
+misrecognize words. Treat clearly recognized scam evidence seriously; do not treat omitted words
+or low confidence as evidence that the call is safe, and do not invent words that are not present.
 
 Analyze the following phone call transcript:
 "{transcript}"
@@ -166,16 +136,4 @@ JSON format:
             "category": detected_category,
             "risk_keywords": found_keywords,
             "reasoning": reasoning,
-        }
-
-    def run(self, audio_path: str) -> dict:
-        transcript = self.transcribe_audio(audio_path)
-        analysis = self.analyze_scam_intent(transcript)
-
-        return {
-            "transcript": transcript,
-            "scam_score": analysis["scam_score"],
-            "category": analysis["category"],
-            "risk_keywords": analysis["risk_keywords"],
-            "reasoning": analysis["reasoning"],
         }

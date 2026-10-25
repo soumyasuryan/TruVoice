@@ -45,6 +45,18 @@ class TokenResponse(BaseModel):
 class AudioAnalysisResponse(BaseModel):
     file_name: str
     transcript: str
+    original_transcript: str = ""
+    normalized_transcript: str = ""
+    partial_transcript: str = ""
+    final_transcript: str = ""
+    transcript_confidence: float = 0.0
+    transcript_quality: str = "unknown"
+    detected_language: str | None = None
+    transcript_language: str = "unknown"
+    transcript_language_confidence: float = 0.0
+    time_to_first_partial_sec: float | None = None
+    time_to_final_stitched_sec: float | None = None
+    time_to_first_score_sec: float | None = None
     ai_voice_probability: float
     scam_intent_score: float
     unified_risk_score: float
@@ -121,4 +133,3 @@ class VoiceCallResponse(BaseModel):
     signals: list[str] = []
     duration: int = 0
     created_at: str | None = None
-

@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import time
+from collections import OrderedDict
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
@@ -20,6 +21,22 @@ router = APIRouter(prefix="/api/v1", tags=["Audio Analysis"])
 
 _call_alert_gates: dict[str, SevereWindowGate] = {}
 _guardian_alert_tasks: set[asyncio.Task] = set()
+_call_analysis_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
+_MAX_CALL_ANALYSIS_LOCKS = 256
+
+
+def _get_call_analysis_lock(call_id: str) -> asyncio.Lock:
+    lock = _call_analysis_locks.get(call_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _call_analysis_locks[call_id] = lock
+    _call_analysis_locks.move_to_end(call_id)
+    while len(_call_analysis_locks) > _MAX_CALL_ANALYSIS_LOCKS:
+        oldest_call_id, oldest_lock = next(iter(_call_analysis_locks.items()))
+        if oldest_lock.locked():
+            break
+        _call_analysis_locks.pop(oldest_call_id)
+    return lock
 
 
 @router.post("/analyze", response_model=AudioAnalysisResponse)
@@ -64,6 +81,7 @@ async def analyze_base64_audio(
     if not payload.audio_base64:
         raise HTTPException(status_code=400, detail="audio_base64 payload is required.")
 
+    request_started_at = time.perf_counter()
     b64_data = payload.audio_base64
     if "," in b64_data:
         b64_data = b64_data.split(",", 1)[1]
@@ -87,7 +105,107 @@ async def analyze_base64_audio(
 
         loop = asyncio.get_running_loop()
         pipeline = get_pipeline()
-        result = await loop.run_in_executor(None, pipeline.analyze_audio_sample, temp_path)
+
+        def emit_partial_transcript(
+            transcript: str,
+            confidence: float,
+            quality: str,
+            language: str,
+            language_confidence: float,
+            elapsed_sec: float,
+        ) -> None:
+            if not payload.call_id:
+                return
+            event = {
+                "call_id": payload.call_id,
+                "partial_transcript": transcript,
+                "transcript": transcript,
+                "transcript_confidence": confidence,
+                "transcript_quality": quality,
+                "transcript_language": language,
+                "transcript_language_confidence": language_confidence,
+                "time_to_first_partial_sec": elapsed_sec,
+            }
+            future = asyncio.run_coroutine_threadsafe(
+                manager.emit_call_event(
+                    payload.call_id,
+                    "transcript_partial",
+                    event,
+                ),
+                loop,
+            )
+
+            def log_emit_error(completed_future) -> None:
+                try:
+                    completed_future.result()
+                except Exception:
+                    logger.exception("Unable to emit partial transcript for call %s", payload.call_id)
+
+            future.add_done_callback(log_emit_error)
+
+        def emit_final_transcript(
+            transcript: str,
+            confidence: float,
+            quality: str,
+            language: str,
+            language_confidence: float,
+            elapsed_sec: float,
+        ) -> None:
+            if not payload.call_id:
+                return
+            event = {
+                "call_id": payload.call_id,
+                "type": "transcript_final",
+                "final_transcript": transcript,
+                "transcript_confidence": confidence,
+                "transcript_quality": quality,
+                "transcript_language": language,
+                "transcript_language_confidence": language_confidence,
+                "time_to_final_stitched_sec": elapsed_sec,
+            }
+            future = asyncio.run_coroutine_threadsafe(
+                manager.emit_call_event(
+                    payload.call_id,
+                    "transcript_final",
+                    event,
+                ),
+                loop,
+            )
+
+            def log_emit_error(completed_future) -> None:
+                try:
+                    completed_future.result()
+                except Exception:
+                    logger.exception("Unable to emit final transcript for call %s", payload.call_id)
+
+            future.add_done_callback(log_emit_error)
+
+        async def run_pipeline():
+            if not payload.call_id:
+                return await loop.run_in_executor(
+                    None,
+                    pipeline.analyze_audio_sample,
+                    temp_path,
+                )
+            return await loop.run_in_executor(
+                None,
+                pipeline.analyze_audio_sample,
+                temp_path,
+                payload.call_id,
+                emit_partial_transcript,
+                emit_final_transcript,
+            )
+
+        if payload.call_id:
+            async with _get_call_analysis_lock(payload.call_id):
+                result = await run_pipeline()
+        else:
+            result = await run_pipeline()
+        logger.info(
+            "Live analysis timing call_id=%s request_to_first_score_sec=%.3f",
+            payload.call_id or "non-live",
+            time.perf_counter() - request_started_at,
+        )
         _save_analysis_history(user_id, caller_num, result)
 
         if payload.call_id:
@@ -115,7 +233,25 @@ async def analyze_base64_audio(
                 "scam_category": result.get("scam_category", ""),
                 "is_scam": is_scam,
                 "is_ai_voice": is_ai_voice,
-                "transcript": result.get("transcript", ""),
+                "transcript": result.get(
+                    "final_transcript",
+                    result.get("transcript", ""),
+                ),
+                "partial_transcript": "",
+                "final_transcript": result.get(
+                    "final_transcript",
+                    result.get("transcript", ""),
+                ),
+                "normalized_transcript": result.get("normalized_transcript", ""),
+                "transcript_confidence": result.get("transcript_confidence", 0.0),
+                "transcript_quality": result.get("transcript_quality", "unknown"),
+                "transcript_language": result.get("transcript_language", "unknown"),
+                "transcript_language_confidence": result.get(
+                    "transcript_language_confidence", 0.0
+                ),
+                "time_to_first_partial_sec": result.get("time_to_first_partial_sec"),
+                "time_to_final_stitched_sec": result.get("time_to_final_stitched_sec"),
+                "time_to_first_score_sec": result.get("time_to_first_score_sec"),
                 "signals": keywords,
                 "reasoning": result.get("reasoning", ""),
                 "ai_voice_probability": ai_prob,

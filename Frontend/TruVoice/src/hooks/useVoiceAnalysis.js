@@ -41,8 +41,26 @@ export function useVoiceAnalysis(callId, onAnalysisUpdate) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'analysis_update') {
+          if (data.type === 'transcript_partial') {
+            setCallData({
+              partialTranscript: data.partial_transcript || data.transcript || '',
+              transcriptConfidence: data.transcript_confidence,
+              transcriptQuality: data.transcript_quality,
+              transcriptLanguage: data.transcript_language,
+            });
+          } else if (data.type === 'transcript_final') {
+            const finalTranscript = data.final_transcript || '';
+            setCallData({
+              transcript: finalTranscript,
+              partialTranscript: '',
+              finalTranscript,
+              transcriptConfidence: data.transcript_confidence,
+              transcriptQuality: data.transcript_quality,
+              transcriptLanguage: data.transcript_language,
+            });
+          } else if (data.type === 'analysis_update') {
             analysisUpdateRef.current?.(data);
+            const finalTranscript = data.final_transcript || data.transcript || '';
             setCallData({
               trustScore: data.trust_score,
               confidence: data.confidence,
@@ -51,7 +69,9 @@ export function useVoiceAnalysis(callId, onAnalysisUpdate) {
               isAIVoice: data.is_ai_voice,
               threatType: data.threat_type || 'NORMAL',
               uiAlert: data.ui_alert || 'This call looks safe.',
-              transcript: data.transcript,
+              transcript: finalTranscript,
+              partialTranscript: '',
+              finalTranscript,
               signals: data.signals || [],
               reasoning: data.reasoning || '',
             });

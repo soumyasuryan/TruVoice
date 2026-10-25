@@ -16,6 +16,7 @@ from app.schemas import (
     VoiceCallResponse,
 )
 from app.services.agora_service import generate_rtc_token, _compute_uid
+from app.services.local_stt import clear_transcript_session
 from app.services.streaming_service import (
     get_or_create_stream_session,
     remove_stream_session,
@@ -193,6 +194,7 @@ async def update_call_status(
         update_data["ended_at"] = now_iso
         if payload.duration > 0:
             update_data["duration"] = payload.duration
+        clear_transcript_session(payload.call_id)
 
         # Broadcast call_ended to WebSocket subscribers
         await manager.broadcast_to_call(payload.call_id, {

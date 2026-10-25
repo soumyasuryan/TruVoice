@@ -30,10 +30,15 @@ class Settings(BaseSettings):
     VOICE_THRESHOLD: float = float(os.getenv("VOICE_THRESHOLD", "0.5"))
     VOICE_MIN_RMS: float = float(os.getenv("VOICE_MIN_RMS", "0.003"))
 
-    # Local GPU transcription and PII sanitization (faster-whisper).
-    # large-v3-turbo provides a strong accuracy/latency balance on the RTX 4050.
-    STT_MODEL_SIZE: str = os.getenv("STT_MODEL_SIZE", "large-v3-turbo")
+    # Local multilingual faster-whisper ASR and decode controls.
+    STT_MODEL_SIZE: str = os.getenv("STT_MODEL_SIZE", "large-v3")
     STT_COMPUTE_TYPE: str = os.getenv("STT_COMPUTE_TYPE", "float16")
+    STT_LANGUAGE: str = os.getenv("STT_LANGUAGE", "auto")
+    STT_BEAM_SIZE: int = int(os.getenv("STT_BEAM_SIZE", "5"))
+    STT_MIN_RMS: float = float(os.getenv("STT_MIN_RMS", "0.003"))
+    STT_MIN_SILENCE_DURATION_MS: int = int(
+        os.getenv("STT_MIN_SILENCE_DURATION_MS", "300")
+    )
 
     # TinyFish Web Verification & Second Opinion Settings
     TINYFISH_API_KEY: str = os.getenv("TINYFISH_API_KEY", "")
@@ -49,4 +54,3 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-

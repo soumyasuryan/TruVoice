@@ -154,6 +154,7 @@ export default function ActiveCallScreen({ navigation, route }) {
   const realTimeTrustScore = useCallStore((s) => s.trustScore);
   const realTimeRiskLevel = useCallStore((s) => s.riskLevel);
   const realTimeTranscript = useCallStore((s) => s.transcript);
+  const realTimePartialTranscript = useCallStore((s) => s.partialTranscript);
   const realTimeSignals = useCallStore((s) => s.signals);
   const riskAlert = useCallStore((s) => s.riskAlert);
   const connectionState = useCallStore((s) => s.connectionState);
@@ -660,6 +661,14 @@ export default function ActiveCallScreen({ navigation, route }) {
                       <Text style={styles.scamCategoryText}>
                         {scamCategory}
                       </Text>
+                    ) : null}
+                    {(realTimePartialTranscript || realTimeTranscript) ? (
+                      <View style={styles.uiAlertBanner}>
+                        <Text style={[styles.uiAlertText, { color: '#D4D4D8' }]}>
+                          {realTimePartialTranscript ? 'Live transcript: ' : 'Transcript: '}
+                          {realTimePartialTranscript || realTimeTranscript}
+                        </Text>
+                      </View>
                     ) : null}
                     {pendingWebEvidence ? (
                       <View style={[styles.uiAlertBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: '#3B82F6', marginTop: 8 }]}>
